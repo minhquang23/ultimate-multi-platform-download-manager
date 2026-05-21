@@ -129,45 +129,65 @@ def process_transcript(input_txt_path, output_txt_path, api_key, log_callback=No
         {formatted_transcript}
         """
         
-        try:
-            # Truyền system instruction vào chung nội dung nếu SDK cũ, 
-            # hoặc tạo message mảng hợp lệ. Flash hỗ trợ prompt khá linh hoạt.
-            # Xử lý chuỗi JSON phòng khi AI trả về markdown ```json ... ```
-            response = model.generate_content(system_instruction + "\n\n" + user_prompt)
-            clean_text = response.text.strip()
-            if clean_text.startswith("```json"):
-                clean_text = clean_text[7:]
-            elif clean_text.startswith("```"):
-                clean_text = clean_text[3:]
-            if clean_text.endswith("```"):
-                clean_text = clean_text[:-3]
-            clean_text = clean_text.strip()
-            
-            chunk_result = json.loads(clean_text)
-            
-            # Gộp kết quả
-            if isinstance(chunk_result, list):
-                annotated_results.extend(chunk_result)
+        max_retries = 3
+        retry_count = 0
+        success = False
+        
+        while retry_count < max_retries and not success:
+            try:
+                # Truyền system instruction vào chung nội dung
+                response = model.generate_content(system_instruction + "\n\n" + user_prompt)
+                clean_text = response.text.strip()
+                if clean_text.startswith("```json"):
+                    clean_text = clean_text[7:]
+                elif clean_text.startswith("```"):
+                    clean_text = clean_text[3:]
+                if clean_text.endswith("```"):
+                    clean_text = clean_text[:-3]
+                clean_text = clean_text.strip()
                 
-            # Cập nhật tiến độ %
-            if progress_callback:
-                percent = int(((i + 1) / total_chunks) * 100)
-                progress_callback(percent)
+                chunk_result = json.loads(clean_text)
                 
-            # Tránh Rate Limit của Gemini Free Tier (15 RPM -> nghỉ 4.5s mỗi request)
-            import time
-            time.sleep(4.5)
+                # Gộp kết quả
+                if isinstance(chunk_result, list):
+                    annotated_results.extend(chunk_result)
+                    
+                # Cập nhật tiến độ %
+                if progress_callback:
+                    percent = int(((i + 1) / total_chunks) * 100)
+                    progress_callback(percent)
+                    
+                # Tránh Rate Limit của Gemini Free Tier (15 RPM -> nghỉ 4.5s mỗi request)
+                import time
+                time.sleep(4.5)
+                success = True
+                    
+            except Exception as e:
+                err_msg = str(e)
+                import time
+                import re
                 
-        except Exception as e:
-            err_msg = str(e)
-            if log_callback:
-                log_callback(f"⚠️ Cảnh báo: Lỗi phân tích ở đoạn {i+1}/{total_chunks}. Chi tiết: {err_msg}")
-            
-            # Ghi log lỗi ra file để debug
-            with open(output_txt_path + ".error.log", "a", encoding="utf-8") as f_err:
-                f_err.write(f"Chunk {i+1} error: {err_msg}\n")
-                
-            # Rớt mạng / quá tải -> Fallback
+                if "429" in err_msg or "Quota exceeded" in err_msg:
+                    # Lỗi vượt quá Rate Limit, tìm thời gian cần đợi
+                    wait_time = 60 # Mặc định đợi 60s
+                    match = re.search(r"retry in (\d+\.?\d*)s", err_msg)
+                    if match:
+                        wait_time = float(match.group(1)) + 1.0 # Cộng 1s an toàn
+                        
+                    if log_callback:
+                        log_callback(f"⏳ Quá giới hạn API ở đoạn {i+1}. Tạm nghỉ {wait_time:.1f}s để hồi phục (thử lại lần {retry_count+1}/3)...")
+                    time.sleep(wait_time)
+                    retry_count += 1
+                else:
+                    if log_callback:
+                        log_callback(f"⚠️ Cảnh báo: Lỗi phân tích ở đoạn {i+1}/{total_chunks}. Chi tiết: {err_msg}")
+                    
+                    with open(output_txt_path + ".error.log", "a", encoding="utf-8") as f_err:
+                        f_err.write(f"Chunk {i+1} error: {err_msg}\n")
+                    break # Thoát vòng lặp while, không retry nếu không phải lỗi 429
+                    
+        if not success:
+            # Fallback nếu vượt quá số lần thử hoặc lỗi không mong muốn
             for seg in chunk:
                 annotated_results.append({
                     "time": seg["time"],

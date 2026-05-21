@@ -384,16 +384,16 @@ class App(ctk.CTk):
         )
         cb_all.pack(side="left", anchor="w")
         
-        self.check_all_sub_var = ctk.StringVar(value="on")
-        cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub, width=30)
-        cb_all_sub.grid(row=0, column=1, padx=(5,2))
+        lbl_lang = ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=140, anchor="center")
+        lbl_lang.grid(row=0, column=1, padx=(5,5))
         
-        # Place an empty label to occupy the Dropdown column in header
-        ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=140).grid(row=0, column=2, padx=(2,10))
+        self.check_all_sub_var = ctk.StringVar(value="on")
+        cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub, width=95)
+        cb_all_sub.grid(row=0, column=2, padx=(5,5))
         
         self.check_all_whisper_var = ctk.StringVar(value="on")
-        cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper, width=30)
-        cb_all_whisper.grid(row=0, column=3, padx=(5,10))
+        cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper, width=95)
+        cb_all_whisper.grid(row=0, column=3, padx=(5,5))
         
         # Helper: Marquee event handlers
         def start_marquee(event, widget, full_text):
@@ -461,13 +461,7 @@ class App(ctk.CTk):
             else:
                 cb.deselect()
 
-            # Checkbox Subtitle 📝
-            var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
-            cb_sub = ctk.CTkCheckBox(row_frame, text="📝", variable=var_sub, width=30)
-            cb_sub.grid(row=0, column=1, padx=(5,2), pady=2)
-            ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
-            
-            # Dropdown Ngôn ngữ Phụ đề
+            # Dropdown Ngôn ngữ Phụ đề (chuyển sang Cột 1)
             detected_lang = item.get('language')
             if item.get('is_local', False):
                 default_lang_display = "Auto-detect (Tự động)"
@@ -481,18 +475,18 @@ class App(ctk.CTk):
                 
             cb_sub_lang = ctk.CTkOptionMenu(row_frame, values=lang_options, width=140)
             cb_sub_lang.set(default_lang_display)
-            cb_sub_lang.grid(row=0, column=2, padx=(2,10), pady=2)
+            cb_sub_lang.grid(row=0, column=1, padx=(5,5), pady=2)
             
-            # Bỏ vô hiệu hóa (disabled) để người dùng có thể tự do chọn ngôn ngữ Đích muốn dịch sang sau khi Whisper nghe xong
-            if item.get('is_local', False):
-                pass
-            elif not item.get('has_subtitles', False):
-                pass
+            # Checkbox Subtitle 📝 (chuyển sang Cột 2)
+            var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
+            cb_sub = ctk.CTkCheckBox(row_frame, text="📝", variable=var_sub, width=95)
+            cb_sub.grid(row=0, column=2, padx=(5,5), pady=2)
+            ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
                 
-            # Checkbox Whisper 🎙️
+            # Checkbox Whisper 🎙️ (Cột 3)
             var_whisper = ctk.IntVar(value=1)
-            cb_whisper = ctk.CTkCheckBox(row_frame, text="🎙️", variable=var_whisper, width=30)
-            cb_whisper.grid(row=0, column=3, padx=(5,10), pady=2)
+            cb_whisper = ctk.CTkCheckBox(row_frame, text="🎙️", variable=var_whisper, width=95)
+            cb_whisper.grid(row=0, column=3, padx=(5,5), pady=2)
             ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
 
             # Status label

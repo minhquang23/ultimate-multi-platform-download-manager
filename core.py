@@ -205,6 +205,7 @@ class TqdmInterceptor:
                 except ValueError:
                     pass
         elif "Detected language:" in s:
+            # Whisper sometimes prints this to stderr, though usually stdout.
             lang_name = s.split("Detected language:")[-1].strip()
             if self.log_callback:
                 self.log_callback("[Whisper] ✅ " + s.strip())
@@ -213,6 +214,25 @@ class TqdmInterceptor:
 
     def flush(self):
         self.original_stderr.flush()
+
+class StdoutInterceptor:
+    """Intercepts sys.stdout to catch 'Detected language' which whisper prints to stdout."""
+    def __init__(self, original_stdout, lang_callback=None, log_callback=None):
+        self.original_stdout = original_stdout
+        self.lang_callback = lang_callback
+        self.log_callback = log_callback
+
+    def write(self, s):
+        self.original_stdout.write(s)
+        if "Detected language:" in s:
+            lang_name = s.split("Detected language:")[-1].strip()
+            if self.log_callback:
+                self.log_callback("[Whisper] ✅ " + s.strip())
+            if self.lang_callback:
+                self.lang_callback(lang_name)
+
+    def flush(self):
+        self.original_stdout.flush()
 
 def check_whisper_available():
     """Kiểm tra xem openai-whisper đã được cài chưa."""
@@ -308,6 +328,14 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
         lang_callback=whisper_lang_callback
     )
     sys.stderr = interceptor
+    
+    original_stdout = sys.stdout
+    stdout_interceptor = StdoutInterceptor(
+        original_stdout=sys.stdout,
+        lang_callback=whisper_lang_callback,
+        log_callback=log_callback
+    )
+    sys.stdout = stdout_interceptor
 
     try:
         if cancel_event and cancel_event.is_set():
@@ -361,8 +389,9 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
             log_callback(f"[Whisper] ❌ Lỗi trong quá trình transcribe: {e}")
         return None
     finally:
-        # Restore stderr luôn luôn
+        # Restore stderr
         sys.stderr = original_stderr
+        sys.stdout = original_stdout
 
     # Chuẩn bị tên file output
     video_basename = os.path.splitext(os.path.basename(video_path))[0]

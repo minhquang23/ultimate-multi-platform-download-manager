@@ -364,7 +364,6 @@ class App(ctk.CTk):
         header_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
         header_frame.pack(fill="x", expand=True, padx=5, pady=(5, 10))
         header_frame.grid_columnconfigure(0, weight=1)
-        header_frame.grid_columnconfigure(0, weight=1)
         header_frame.grid_columnconfigure(1, weight=0, minsize=120)
         header_frame.grid_columnconfigure(2, weight=0, minsize=80)
         header_frame.grid_columnconfigure(3, weight=0, minsize=80)
@@ -374,7 +373,8 @@ class App(ctk.CTk):
         header_title_frame.pack_propagate(False)
         header_title_frame.grid(row=0, column=0, padx=5, pady=2, sticky="w")
         
-        cb_all = ctk.CTkCheckBox(
+        self.check_all_var = ctk.StringVar(value="off")
+        self.cb_all = ctk.CTkCheckBox(
             header_title_frame, 
             text="Chọn tất cả video", 
             variable=self.check_all_var, 
@@ -389,12 +389,12 @@ class App(ctk.CTk):
         lbl_lang.grid(row=0, column=1, padx=(5,5), sticky="w")
         
         self.check_all_sub_var = ctk.StringVar(value="on")
-        cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub)
-        cb_all_sub.grid(row=0, column=2, padx=(5,5), sticky="w")
+        self.cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub)
+        self.cb_all_sub.grid(row=0, column=2, padx=(5,5), sticky="w")
         
         self.check_all_whisper_var = ctk.StringVar(value="on")
-        cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper)
-        cb_all_whisper.grid(row=0, column=3, padx=(5,5), sticky="w")
+        self.cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper)
+        self.cb_all_whisper.grid(row=0, column=3, padx=(5,5), sticky="w")
         
         # Dummy status frame để cân bằng base width với các row_frame bên dưới
         dummy_status = ctk.CTkFrame(header_frame, fg_color="transparent", width=110, height=28)
@@ -611,6 +611,15 @@ class App(ctk.CTk):
         self.btn_select_file.configure(state="disabled")
         self.btn_clear.configure(state="disabled")
         self.textbox_urls.configure(state="disabled")
+        
+        if hasattr(self, 'cb_all'): self.cb_all.configure(state="disabled")
+        if hasattr(self, 'cb_all_sub'): self.cb_all_sub.configure(state="disabled")
+        if hasattr(self, 'cb_all_whisper'): self.cb_all_whisper.configure(state="disabled")
+        
+        for row in self.video_rows.values():
+            if 'cb' in row: row['cb'].configure(state="disabled")
+            if 'cb_sub' in row: row['cb_sub'].configure(state="disabled")
+            if 'cb_whisper' in row: row['cb_whisper'].configure(state="disabled")
 
         # Tạo Session Directory
         now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -720,6 +729,15 @@ class App(ctk.CTk):
         self.btn_clear.configure(state="normal")
         self.textbox_urls.configure(state="normal")
         self.btn_start.configure(state="normal", text="🚀 Bắt đầu Xử lý", fg_color="#1f538d", hover_color="#14375e")
+        
+        if hasattr(self, 'cb_all'): self.cb_all.configure(state="normal")
+        if hasattr(self, 'cb_all_sub'): self.cb_all_sub.configure(state="normal")
+        if hasattr(self, 'cb_all_whisper'): self.cb_all_whisper.configure(state="normal")
+        
+        for row in self.video_rows.values():
+            if 'cb' in row: row['cb'].configure(state="normal")
+            if 'cb_sub' in row: row['cb_sub'].configure(state="normal")
+            if 'cb_whisper' in row: row['cb_whisper'].configure(state="normal")
 
     # ================= TAB 2: CÀI ĐẶT =================
     def build_settings_tab(self):

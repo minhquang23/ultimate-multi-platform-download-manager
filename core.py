@@ -256,6 +256,11 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
     Returns:
         str: Đường dẫn file .txt nếu thành công, None nếu thất bại.
     """
+    original_stderr = sys.stderr
+
+    if cancel_event and cancel_event.is_set():
+        raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
+
     # Kiểm tra Whisper đã cài chưa
     try:
         import whisper
@@ -289,43 +294,53 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
         if actual_device == 'cuda' and model_name in ['large', 'large-v2', 'large-v3']:
             log_callback("[Whisper] ⚠️ Lưu ý: large model cần ~3GB VRAM. GTX 950 (2GB) có thể bị OOM, sẽ tự fallback sang CPU.")
 
-    # Load model (tự tải nếu chưa có)
-    os.makedirs(model_dir, exist_ok=True)
-    try:
-        model = whisper.load_model(model_name, device=actual_device, download_root=model_dir)
-    except RuntimeError as e:
-        if 'out of memory' in str(e).lower() and actual_device == 'cuda':
-            if log_callback:
-                log_callback("[Whisper] ⚠️ VRAM không đủ! Chuyển sang CPU để xử lý (sẽ chậm hơn)...")
-            try:
-                import torch
-                torch.cuda.empty_cache()
-                model = whisper.load_model(model_name, device='cpu', download_root=model_dir)
-                actual_device = 'cpu'
-            except Exception as e2:
-                if log_callback:
-                    log_callback(f"[Whisper] ❌ Không thể load model ngay cả trên CPU: {e2}")
-                return None
-        else:
-            if log_callback:
-                log_callback(f"[Whisper] ❌ Lỗi load model: {e}")
-            return None
-
-    if log_callback:
-        log_callback(f"[Whisper] ⏳ Đang nhận diện giọng nói... (Có thể mất vài phút tuỳ độ dài video)")
-
-    # Intercept stderr to parse tqdm
-    # Tạo interceptor để chèn vào sys.stderr
+    # Tạo interceptor để chèn vào sys.stderr trước khi load/tải model
+    # Điều này giúp theo dõi % tiến trình tải model và cho phép hủy ngay lập tức nếu người dùng bấm Hủy
     interceptor = TqdmInterceptor(
         callback=whisper_progress_callback, 
-        original_stderr=sys.stderr, 
+        original_stderr=original_stderr, 
         log_callback=log_callback,
         cancel_event=cancel_event
     )
     sys.stderr = interceptor
 
-    # Transcribe
     try:
+        if cancel_event and cancel_event.is_set():
+            raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
+
+        # Load model (tự tải nếu chưa có)
+        os.makedirs(model_dir, exist_ok=True)
+        try:
+            model = whisper.load_model(model_name, device=actual_device, download_root=model_dir)
+        except RuntimeError as e:
+            if 'out of memory' in str(e).lower() and actual_device == 'cuda':
+                if log_callback:
+                    log_callback("[Whisper] ⚠️ VRAM không đủ! Chuyển sang CPU để xử lý (sẽ chậm hơn)...")
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                    if cancel_event and cancel_event.is_set():
+                        raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
+                    model = whisper.load_model(model_name, device='cpu', download_root=model_dir)
+                    actual_device = 'cpu'
+                except Exception as e2:
+                    if isinstance(e2, CancelException):
+                        raise e2
+                    if log_callback:
+                        log_callback(f"[Whisper] ❌ Không thể load model ngay cả trên CPU: {e2}")
+                    return None
+            else:
+                if log_callback:
+                    log_callback(f"[Whisper] ❌ Lỗi load model: {e}")
+                return None
+
+        if cancel_event and cancel_event.is_set():
+            raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
+
+        if log_callback:
+            log_callback(f"[Whisper] ⏳ Đang nhận diện giọng nói... (Có thể mất vài phút tuỳ độ dài video)")
+
+        # Transcribe
         # Tắt cảnh báo FP16 trên CPU
         fp16_flag = True if actual_device == 'cuda' else False
         result = model.transcribe(
@@ -333,15 +348,15 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
             verbose=False,
             word_timestamps=False,
             fp16=fp16_flag,
-            # Gợi ý ngôn ngữ: nếu video tiếng Việt thì khai báo để tăng độ chính xác
-            # language='vi'  # Bỏ comment nếu muốn force tiếng Việt
         )
     except Exception as e:
+        if isinstance(e, CancelException):
+            raise e
         if log_callback:
             log_callback(f"[Whisper] ❌ Lỗi trong quá trình transcribe: {e}")
         return None
     finally:
-        # Restore stderr
+        # Restore stderr luôn luôn
         sys.stderr = original_stderr
 
     # Chuẩn bị tên file output
@@ -352,6 +367,9 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
     # Ghi kết quả ra file .txt theo định dạng chuẩn của Tool
     os.makedirs(output_txt_dir, exist_ok=True)
     try:
+        if cancel_event and cancel_event.is_set():
+            raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
+
         segments = result.get('segments', [])
         detected_lang = result.get('language', 'unknown')
 
@@ -361,6 +379,8 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
             f.write(f"# Thiết bị xử lý: {actual_device.upper()}\n\n")
 
             for seg in segments:
+                if cancel_event and cancel_event.is_set():
+                    raise CancelException("Tiến trình đã bị hủy bởi người dùng.")
                 start_ts = seconds_to_timestamp(seg['start'])
                 end_ts = seconds_to_timestamp(seg['end'])
                 text = seg['text'].strip()

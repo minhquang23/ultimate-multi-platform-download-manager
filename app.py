@@ -383,7 +383,7 @@ class App(ctk.CTk):
             command=self.toggle_all,
             font=ctk.CTkFont(weight="bold")
         )
-        cb_all.pack(side="left", anchor="w")
+        self.cb_all.pack(side="left", anchor="w")
         
         lbl_lang = ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=120, anchor="center")
         lbl_lang.grid(row=0, column=1, padx=(5,5), sticky="w")

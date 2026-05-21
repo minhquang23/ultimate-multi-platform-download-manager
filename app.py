@@ -369,8 +369,12 @@ class App(ctk.CTk):
         header_frame.grid_columnconfigure(3, weight=0)
         header_frame.grid_columnconfigure(4, weight=2)
         
+        header_title_frame = ctk.CTkFrame(header_frame, fg_color="transparent", width=330, height=28)
+        header_title_frame.pack_propagate(False)
+        header_title_frame.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        
         cb_all = ctk.CTkCheckBox(
-            header_frame, 
+            header_title_frame, 
             text="Chọn tất cả video", 
             variable=self.check_all_var, 
             onvalue="on", 
@@ -378,7 +382,7 @@ class App(ctk.CTk):
             command=self.toggle_all,
             font=ctk.CTkFont(weight="bold")
         )
-        cb_all.grid(row=0, column=0, sticky="w")
+        cb_all.pack(side="left", anchor="w")
         
         self.check_all_sub_var = ctk.StringVar(value="on")
         cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub, width=30)
@@ -437,12 +441,16 @@ class App(ctk.CTk):
             }
             prefix = platform_icons.get(platform, '🔗')
 
-            # Checkbox Video (với Marquee)
+            # Checkbox Video (với Marquee) được bọc trong Frame kích thước cố định để chống xê dịch
+            title_container = ctk.CTkFrame(row_frame, fg_color="transparent", width=330, height=28)
+            title_container.pack_propagate(False)
+            title_container.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+            
             var = ctk.IntVar()
             full_title = f"{idx+1}. {prefix} {title}"
             display_title = full_title if len(full_title) <= 45 else full_title[:42] + "..."
-            cb = ctk.CTkCheckBox(row_frame, text=display_title, variable=var, width=280)
-            cb.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+            cb = ctk.CTkCheckBox(title_container, text=display_title, variable=var)
+            cb.pack(side="left", anchor="w")
             
             # Bind events for marquee
             cb.bind("<Enter>", lambda e, w=cb, t=full_title: start_marquee(e, w, t))
@@ -491,7 +499,7 @@ class App(ctk.CTk):
 
             # Status label
             lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
-            lbl_status.grid(row=0, column=4, padx=5, pady=2, sticky="w")
+            lbl_status.grid(row=0, column=4, padx=5, pady=2, sticky="ew")
 
             # Lưu vào dictionary của app
             self.video_rows[url] = {

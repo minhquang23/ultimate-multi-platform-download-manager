@@ -364,9 +364,9 @@ class App(ctk.CTk):
         header_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
         header_frame.pack(fill="x", expand=True, padx=5, pady=(5, 10))
         header_frame.grid_columnconfigure(0, weight=1)
-        header_frame.grid_columnconfigure(1, weight=0)
-        header_frame.grid_columnconfigure(2, weight=0)
-        header_frame.grid_columnconfigure(3, weight=0)
+        header_frame.grid_columnconfigure(1, weight=0, minsize=160)
+        header_frame.grid_columnconfigure(2, weight=0, minsize=100)
+        header_frame.grid_columnconfigure(3, weight=0, minsize=100)
         header_frame.grid_columnconfigure(4, weight=2)
         
         header_title_frame = ctk.CTkFrame(header_frame, fg_color="transparent", width=330, height=28)
@@ -424,9 +424,9 @@ class App(ctk.CTk):
             row_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
             row_frame.pack(fill="x", expand=True, padx=5, pady=4)
             row_frame.grid_columnconfigure(0, weight=1) # Title chiếm 1/3
-            row_frame.grid_columnconfigure(1, weight=0) # Checkbox sub
-            row_frame.grid_columnconfigure(2, weight=0) # Dropdown sub lang
-            row_frame.grid_columnconfigure(3, weight=0) # Checkbox whisper
+            row_frame.grid_columnconfigure(1, weight=0, minsize=160) # Dropdown sub lang
+            row_frame.grid_columnconfigure(2, weight=0, minsize=100) # Checkbox sub
+            row_frame.grid_columnconfigure(3, weight=0, minsize=100) # Checkbox whisper
             row_frame.grid_columnconfigure(4, weight=2) # Status label (chiếm 2/3)
 
             # Icon tương ứng với từng Platform

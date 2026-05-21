@@ -1,0 +1,10 @@
+# Tệp bỏ qua của Git
+__pycache__/
+.venv/
+build/
+downloads/
+cookies.txt
+settings.json
+download_history.json
+node.exe
+*.pyc

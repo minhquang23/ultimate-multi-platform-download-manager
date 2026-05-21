@@ -1,0 +1,20 @@
+# HiveTech Download Manager v3.0 — Python Dependencies
+# Cài đặt bằng: pip install -r requirements.txt
+# Lưu ý: PyTorch CUDA cần cài riêng qua setup_local.ps1
+
+# ---- Core App ----
+yt-dlp
+customtkinter
+webvtt-py
+
+# ---- Whisper AI (Speech-to-Text) ----
+openai-whisper
+
+# ---- Speaker Diarization (LLM) ----
+google-generativeai
+
+# ---- ffmpeg (tự động tải binary) ----
+imageio-ffmpeg
+
+# ---- Build tools (chỉ cần khi build Installer/Portable) ----
+# pip install pyinstaller

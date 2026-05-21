@@ -638,9 +638,10 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
         if progress_callback:
             progress_callback(url, 100.0, download_size, download_size)
 
-        if use_whisper:
+        if use_whisper or use_subtitle:
             if log_callback:
-                log_callback(f"🎙️ Bắt đầu phân tích Whisper cho tệp {os.path.basename(video_path)}...")
+                mode_icon = "🎙️" if use_whisper else "📝"
+                log_callback(f"{mode_icon} Bắt đầu phân tích Whisper cho tệp {os.path.basename(video_path)}...")
             transcribe_with_whisper(
                 video_path=video_path,
                 output_txt_dir=txt_dir,

@@ -287,8 +287,10 @@ class App(ctk.CTk):
             for f in filenames:
                 new_lines.append(f)
             
+            new_urls_text = "\n".join(new_lines)
+            self._last_scanned_urls_text = new_urls_text
             self.textbox_urls.delete("1.0", "end")
-            self.textbox_urls.insert("end", "\n".join(new_lines))
+            self.textbox_urls.insert("end", new_urls_text)
             self.scan_urls()
 
     def clear_urls(self):
@@ -306,6 +308,17 @@ class App(ctk.CTk):
                 row['checkbox'].select()
             else:
                 row['checkbox'].deselect()
+
+    def toggle_all_sub(self):
+        val = 1 if self.check_all_sub_var.get() == "on" else 0
+        for _, row in self.video_rows.items():
+            if row['cb_sub'].cget('state') != 'disabled':
+                row['var_sub'].set(val)
+
+    def toggle_all_whisper(self):
+        val = 1 if self.check_all_whisper_var.get() == "on" else 0
+        for _, row in self.video_rows.items():
+            row['var_whisper'].set(val)
 
     def scan_urls(self):
         urls_text = self.textbox_urls.get("1.0", "end").strip()
@@ -347,9 +360,17 @@ class App(ctk.CTk):
         self.log_message(f"Quét thành công! Đã tìm thấy {len(results)} video. Hãy chọn các video muốn tải.")
         self.scrollable_frame.configure(label_text=f"Danh sách Video ({len(results)} video)")
         
-        # Tạo Checkbox "Chọn tất cả"
+        # Tạo Header chứa các nút Chọn tất cả
+        header_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
+        header_frame.pack(fill="x", expand=True, padx=5, pady=(5, 10))
+        header_frame.grid_columnconfigure(0, weight=1)
+        header_frame.grid_columnconfigure(1, weight=0)
+        header_frame.grid_columnconfigure(2, weight=0)
+        header_frame.grid_columnconfigure(3, weight=0)
+        header_frame.grid_columnconfigure(4, weight=2)
+        
         cb_all = ctk.CTkCheckBox(
-            self.scrollable_frame, 
+            header_frame, 
             text="Chọn tất cả video", 
             variable=self.check_all_var, 
             onvalue="on", 
@@ -357,8 +378,37 @@ class App(ctk.CTk):
             command=self.toggle_all,
             font=ctk.CTkFont(weight="bold")
         )
-        cb_all.pack(anchor="w", padx=10, pady=(5, 10))
+        cb_all.grid(row=0, column=0, sticky="w")
         
+        self.check_all_sub_var = ctk.StringVar(value="on")
+        cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub, width=30)
+        cb_all_sub.grid(row=0, column=1, padx=(5,2))
+        
+        # Place an empty label to occupy the Dropdown column in header
+        ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=140).grid(row=0, column=2, padx=(2,10))
+        
+        self.check_all_whisper_var = ctk.StringVar(value="on")
+        cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper, width=30)
+        cb_all_whisper.grid(row=0, column=3, padx=(5,10))
+        
+        # Helper: Marquee event handlers
+        def start_marquee(event, widget, full_text):
+            if len(full_text) <= 45: return
+            widget.marquee_active = True
+            widget.marquee_text = full_text + "   ***   "
+            def scroll():
+                if getattr(widget, 'marquee_active', False):
+                    shifted = widget.marquee_text[1:] + widget.marquee_text[0]
+                    widget.marquee_text = shifted
+                    widget.configure(text=shifted[:45])
+                    widget.after(150, scroll)
+            scroll()
+            
+        def stop_marquee(event, widget, original_display):
+            if getattr(widget, 'marquee_active', False):
+                widget.marquee_active = False
+                widget.configure(text=original_display)
+
         # Render từng hàng cho mỗi video quét được
         for idx, item in enumerate(results):
             title = item.get('title')
@@ -369,11 +419,11 @@ class App(ctk.CTk):
             # Khởi tạo frame con cho hàng video
             row_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
             row_frame.pack(fill="x", expand=True, padx=5, pady=4)
-            row_frame.grid_columnconfigure(0, weight=4) # Title chiếm chỗ nhiều nhất
+            row_frame.grid_columnconfigure(0, weight=1) # Title chiếm 1/3
             row_frame.grid_columnconfigure(1, weight=0) # Checkbox sub
             row_frame.grid_columnconfigure(2, weight=0) # Dropdown sub lang
             row_frame.grid_columnconfigure(3, weight=0) # Checkbox whisper
-            row_frame.grid_columnconfigure(4, weight=4) # Status label (chiếm toàn bộ không gian còn lại)
+            row_frame.grid_columnconfigure(4, weight=2) # Status label (chiếm 2/3)
 
             # Icon tương ứng với từng Platform
             platform_icons = {
@@ -387,10 +437,17 @@ class App(ctk.CTk):
             }
             prefix = platform_icons.get(platform, '🔗')
 
-            # Checkbox Video
+            # Checkbox Video (với Marquee)
             var = ctk.IntVar()
-            cb = ctk.CTkCheckBox(row_frame, text=f"{idx+1}. {prefix} {title}", variable=var)
+            full_title = f"{idx+1}. {prefix} {title}"
+            display_title = full_title if len(full_title) <= 45 else full_title[:42] + "..."
+            cb = ctk.CTkCheckBox(row_frame, text=display_title, variable=var, width=280)
             cb.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+            
+            # Bind events for marquee
+            cb.bind("<Enter>", lambda e, w=cb, t=full_title: start_marquee(e, w, t))
+            cb.bind("<Leave>", lambda e, w=cb, t=display_title: stop_marquee(e, w, t))
+            
             if is_main:
                 cb.select()
             else:
@@ -403,8 +460,12 @@ class App(ctk.CTk):
             ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
             
             # Dropdown Ngôn ngữ Phụ đề
-            detected_lang = item.get('language') or 'en'
-            default_lang_display = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
+            detected_lang = item.get('language')
+            if item.get('is_local', False):
+                default_lang_display = "Auto-detect (Tự động)"
+            else:
+                detected_lang = detected_lang or 'en'
+                default_lang_display = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
             
             lang_options = list(SUBTITLE_LANGUAGES.values())
             if default_lang_display not in lang_options:
@@ -414,7 +475,10 @@ class App(ctk.CTk):
             cb_sub_lang.set(default_lang_display)
             cb_sub_lang.grid(row=0, column=2, padx=(2,10), pady=2)
             
-            if not item.get('has_subtitles', False) or item.get('is_local', False):
+            # Disable logic
+            if item.get('is_local', False):
+                cb_sub_lang.configure(state="disabled")
+            elif not item.get('has_subtitles', False):
                 cb_sub.configure(state="disabled")
                 cb_sub_lang.configure(state="disabled")
                 var_sub.set(0)
@@ -435,6 +499,7 @@ class App(ctk.CTk):
                 'status_label': lbl_status,
                 'var': var,
                 'var_sub': var_sub,
+                'cb_sub': cb_sub,
                 'cb_sub_lang': cb_sub_lang,
                 'var_whisper': var_whisper,
                 'title': title,

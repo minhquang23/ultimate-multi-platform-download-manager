@@ -64,7 +64,7 @@ def chunk_segments(segments, chunk_size=50):
     """Chia nhỏ segments thành các chunk để không tràn token của LLM."""
     return [segments[i:i + chunk_size] for i in range(0, len(segments), chunk_size)]
 
-def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gemini-2.5-flash', log_callback=None, progress_callback=None, target_lang=None, diarize=False):
+def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gemini-2.5-flash', log_callback=None, progress_callback=None, target_lang=None, diarize=False, cancel_event=None):
     """Luồng chính: Nhận diện người nói bằng Gemini 1.5 Flash."""
     try:
         import google.generativeai as genai
@@ -128,6 +128,11 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
         )
 
     for i, chunk in enumerate(chunks):
+        if cancel_event and cancel_event.is_set():
+            if log_callback:
+                log_callback("🛑 Đã hủy tiến trình phân tích AI.")
+            break
+            
         formatted_transcript = ""
         for seg in chunk:
             formatted_transcript += f"[{seg['time']}] {seg['text']}\n"
@@ -172,7 +177,11 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
                     
                 # Tránh Rate Limit của Gemini Free Tier (15 RPM -> nghỉ 4.5s mỗi request)
                 import time
-                time.sleep(4.5)
+                if cancel_event:
+                    if cancel_event.wait(4.5):
+                        break
+                else:
+                    time.sleep(4.5)
                 success = True
                     
             except Exception as e:
@@ -189,7 +198,14 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
                         
                     if log_callback:
                         log_callback(f"⏳ Quá giới hạn API ở đoạn {i+1}. Tạm nghỉ {wait_time:.1f}s để hồi phục (thử lại lần {retry_count+1}/3)...")
-                    time.sleep(wait_time)
+                    
+                    if cancel_event:
+                        if cancel_event.wait(wait_time):
+                            if log_callback: log_callback("🛑 Đã hủy tiến trình trong lúc chờ API.")
+                            break # Thoát khỏi vòng lặp retry ngay lập tức
+                    else:
+                        time.sleep(wait_time)
+                        
                     retry_count += 1
                 else:
                     if log_callback:

@@ -141,7 +141,7 @@ class App(ctk.CTk):
         )
         # Ẩn nút Quét Link vì đã có tính năng tự động quét
         # self.btn_scan.grid(row=0, column=0, padx=10, pady=8, sticky="w")
-
+        
         self.btn_start = ctk.CTkButton(
             self.frame_controls, 
             text="🚀 Bắt đầu Xử lý", 
@@ -467,21 +467,16 @@ class App(ctk.CTk):
             else:
                 cb.deselect()
 
-            # Dropdown Ngôn ngữ Phụ đề (chuyển sang Cột 1)
+            # Text hiển thị Ngôn ngữ (chuyển sang Cột 1)
             detected_lang = item.get('language')
             if item.get('is_local', False):
-                default_lang_display = "Auto-detect (Tự động)"
+                default_lang_display = "Auto-detect"
             else:
                 detected_lang = detected_lang or 'en'
                 default_lang_display = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
-            
-            lang_options = list(SUBTITLE_LANGUAGES.values())
-            if default_lang_display not in lang_options:
-                lang_options.insert(0, default_lang_display)
                 
-            cb_sub_lang = ctk.CTkOptionMenu(row_frame, values=lang_options, width=120)
-            cb_sub_lang.set(default_lang_display)
-            cb_sub_lang.grid(row=0, column=1, padx=(5,5), pady=2, sticky="w")
+            lbl_lang_val = ctk.CTkLabel(row_frame, text=default_lang_display, text_color="#2b7a78", width=120, anchor="w")
+            lbl_lang_val.grid(row=0, column=1, padx=(5,5), pady=2, sticky="w")
             
             # Checkbox Subtitle 📝 (chuyển sang Cột 2)
             var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
@@ -510,7 +505,7 @@ class App(ctk.CTk):
                 'var': var,
                 'var_sub': var_sub,
                 'cb_sub': cb_sub,
-                'cb_sub_lang': cb_sub_lang,
+                'lbl_lang_val': lbl_lang_val,
                 'var_whisper': var_whisper,
                 'title': title,
                 'is_local': item.get('is_local', False)
@@ -557,26 +552,23 @@ class App(ctk.CTk):
         """Callback khi Whisper phát hiện ngôn ngữ."""
         if url in self.video_rows:
             row = self.video_rows[url]
-            cb_sub_lang = row['cb_sub_lang']
-            current_val = cb_sub_lang.get()
+            lbl_lang_val = row['lbl_lang_val']
             
-            # Chỉ tự động đổi nếu người dùng đang để chế độ Auto-detect
-            if current_val in ["Auto-detect (Tự động)", "Tự động", "auto"] or current_val.startswith("Auto-detect"):
-                # Thử map sang ngôn ngữ tiếng Việt nếu có trong danh sách
-                whisper_to_code = {
-                    'vietnamese': 'vi', 'english': 'en', 'chinese': 'zh',
-                    'japanese': 'ja', 'korean': 'ko', 'french': 'fr',
-                    'spanish': 'es', 'russian': 'ru', 'german': 'de'
-                }
-                code = whisper_to_code.get(lang_name.lower())
-                import core
-                if code and code in core.SUBTITLE_LANGUAGES:
-                    display = core.SUBTITLE_LANGUAGES[code]
-                    new_val = f"Auto-detect ({display})"
-                else:
-                    new_val = f"Auto-detect ({lang_name})"
-                
-                self.after(0, lambda: cb_sub_lang.set(new_val))
+            # Thử map sang ngôn ngữ tiếng Việt nếu có trong danh sách
+            whisper_to_code = {
+                'vietnamese': 'vi', 'english': 'en', 'chinese': 'zh',
+                'japanese': 'ja', 'korean': 'ko', 'french': 'fr',
+                'spanish': 'es', 'russian': 'ru', 'german': 'de'
+            }
+            code = whisper_to_code.get(lang_name.lower())
+            import core
+            if code and code in core.SUBTITLE_LANGUAGES:
+                display = core.SUBTITLE_LANGUAGES[code]
+                new_val = f"{display}"
+            else:
+                new_val = f"{lang_name}"
+            
+            self.after(0, lambda: lbl_lang_val.configure(text=new_val))
 
     def update_delay_countdown(self, url, remaining_seconds):
         """Callback cập nhật thời gian đếm ngược (khoảng nghỉ tránh bot) chính xác miligiây."""
@@ -639,14 +631,7 @@ class App(ctk.CTk):
             use_whisper = row['var_whisper'].get() == 1
             is_local = row.get('is_local', False)
             
-            lang_display = row['cb_sub_lang'].get()
-            lang_code = lang_display
-            for k, v in SUBTITLE_LANGUAGES.items():
-                if v == lang_display:
-                    lang_code = k
-                    break
-            if lang_code == lang_display and "(" in lang_display:
-                lang_code = lang_display.split("(")[-1].strip(")")
+            lang_code = "" # Vô hiệu hoá tính năng dịch
                 
             tasks_to_process.append({
                 'url': url,

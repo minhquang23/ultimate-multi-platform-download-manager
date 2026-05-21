@@ -36,7 +36,15 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-**Bước 3: Cài đặt các thư viện cần thiết**
+**Bước 3: Cài đặt thư viện và môi trường AI (Tự động nhận diện phần cứng)**
+
+*Đối với Windows (Khuyên dùng - Tối ưu nhất):*
+Hãy chạy file cài đặt tự động. File này sẽ tự quét máy tính của bạn: nếu có Card rời NVIDIA, nó sẽ tải PyTorch bản GPU (tốc độ siêu tốc); nếu không có, nó tự tải bản CPU. Nó cũng cho phép bạn chọn tải trước model Whisper!
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_local.ps1
+```
+
+*Đối với macOS/Linux hoặc người dùng muốn cài đặt thủ công:*
 ```bash
 pip install -r requirements.txt
 ```

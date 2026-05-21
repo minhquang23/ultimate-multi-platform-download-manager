@@ -550,8 +550,33 @@ class App(ctk.CTk):
             row = self.video_rows[url]
             lbl = row['status_label']
             
-            status_text = f"Nhận diện âm thanh: {percent}% {stats}"
+            status_text = f"Nhận diện âm thanh: {percent}%"
             self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
+
+    def update_whisper_lang(self, url, lang_name):
+        """Callback khi Whisper phát hiện ngôn ngữ."""
+        if url in self.video_rows:
+            row = self.video_rows[url]
+            cb_sub_lang = row['cb_sub_lang']
+            current_val = cb_sub_lang.get()
+            
+            # Chỉ tự động đổi nếu người dùng đang để chế độ Auto-detect
+            if current_val in ["Auto-detect (Tự động)", "Tự động", "auto"] or current_val.startswith("Auto-detect"):
+                # Thử map sang ngôn ngữ tiếng Việt nếu có trong danh sách
+                whisper_to_code = {
+                    'vietnamese': 'vi', 'english': 'en', 'chinese': 'zh',
+                    'japanese': 'ja', 'korean': 'ko', 'french': 'fr',
+                    'spanish': 'es', 'russian': 'ru', 'german': 'de'
+                }
+                code = whisper_to_code.get(lang_name.lower())
+                import core
+                if code and code in core.SUBTITLE_LANGUAGES:
+                    display = core.SUBTITLE_LANGUAGES[code]
+                    new_val = f"Auto-detect ({display})"
+                else:
+                    new_val = f"Auto-detect ({lang_name})"
+                
+                self.after(0, lambda: cb_sub_lang.set(new_val))
 
     def update_delay_countdown(self, url, remaining_seconds):
         """Callback cập nhật thời gian đếm ngược (khoảng nghỉ tránh bot) chính xác miligiây."""

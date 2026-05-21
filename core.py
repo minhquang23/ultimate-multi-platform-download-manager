@@ -178,11 +178,12 @@ class CancelException(BaseException):
 
 class TqdmInterceptor:
     """Intercepts sys.stderr to parse Whisper's tqdm output and send it to GUI."""
-    def __init__(self, callback, original_stderr, log_callback=None, cancel_event=None):
+    def __init__(self, callback, original_stderr, log_callback=None, cancel_event=None, lang_callback=None):
         self.callback = callback
         self.original_stderr = original_stderr
         self.log_callback = log_callback
         self.cancel_event = cancel_event
+        self.lang_callback = lang_callback
         # Regex matches tqdm string, e.g. "58%|███   | 53900/92512 [09:20<07:01, 91.65frames/s]"
         self.pattern = re.compile(r'(\d+)%\|.*\|\s*(\d+/\d+)\s*\[(.*?)\]')
 
@@ -204,8 +205,11 @@ class TqdmInterceptor:
                 except ValueError:
                     pass
         elif "Detected language:" in s:
+            lang_name = s.split("Detected language:")[-1].strip()
             if self.log_callback:
                 self.log_callback("[Whisper] ✅ " + s.strip())
+            if self.lang_callback:
+                self.lang_callback(lang_name)
 
     def flush(self):
         self.original_stderr.flush()
@@ -238,8 +242,9 @@ def get_available_whisper_models(model_dir='models/whisper'):
 
 def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
                              model_dir='models/whisper', device='auto',
-                             log_callback=None, progress_callback=None,
-                             whisper_progress_callback=None, cancel_event=None):
+                             log_callback=None,
+                             whisper_progress_callback=None, cancel_event=None,
+                             whisper_lang_callback=None):
     """
     Sử dụng Whisper AI để phân tích âm thanh từ file video và tạo transcript.
     Whisper hoạt động trực tiếp với file video (tự tách audio nội bộ qua ffmpeg).
@@ -251,7 +256,6 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
         model_dir:        Thư mục chứa (hoặc sẽ tải về) các model Whisper.
         device:           "auto" | "cuda" | "cpu"
         log_callback:     Callback để ghi log.
-        progress_callback: Không dùng trực tiếp ở đây (Whisper không expose progress %).
 
     Returns:
         str: Đường dẫn file .txt nếu thành công, None nếu thất bại.
@@ -298,9 +302,10 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
     # Điều này giúp theo dõi % tiến trình tải model và cho phép hủy ngay lập tức nếu người dùng bấm Hủy
     interceptor = TqdmInterceptor(
         callback=whisper_progress_callback, 
-        original_stderr=original_stderr, 
+        original_stderr=sys.stderr, 
         log_callback=log_callback,
-        cancel_event=cancel_event
+        cancel_event=cancel_event,
+        lang_callback=whisper_lang_callback
     )
     sys.stderr = interceptor
 
@@ -605,7 +610,7 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                                enable_speaker_diarization=False, gemini_api_key='',
                                gemini_model='gemini-2.5-flash',
                                progress_callback=None, log_callback=None, diarization_progress_callback=None,
-                               whisper_progress_callback=None, cancel_event=None):
+                               whisper_progress_callback=None, cancel_event=None, whisper_lang_callback=None):
     """
     Tải video và tạo transcript cho 1 tác vụ.
     """
@@ -642,6 +647,15 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
             if log_callback:
                 mode_icon = "🎙️" if use_whisper else "📝"
                 log_callback(f"{mode_icon} Bắt đầu phân tích Whisper cho tệp {os.path.basename(video_path)}...")
+            
+            def w_prog(percent, stats):
+                if whisper_progress_callback:
+                    whisper_progress_callback(url, percent, stats)
+            
+            def w_lang(detected_lang):
+                if whisper_lang_callback:
+                    whisper_lang_callback(url, detected_lang)
+
             transcribe_with_whisper(
                 video_path=video_path,
                 output_txt_dir=txt_dir,
@@ -649,8 +663,9 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                 model_dir=whisper_model_dir,
                 device=whisper_device,
                 log_callback=log_callback,
-                whisper_progress_callback=lambda p, s: whisper_progress_callback(url, p, s) if whisper_progress_callback else None,
-                cancel_event=cancel_event
+                whisper_progress_callback=w_prog,
+                cancel_event=cancel_event,
+                whisper_lang_callback=w_lang
             )
 
     else:
@@ -792,7 +807,7 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                     log_callback("⚠️ Không tìm thấy file video để chạy Whisper. Hãy bật 'Tải Video' trong cài đặt.")
 
             # --- Chạy Nhận diện Người Nói (Speaker Diarization) HOẶC Dịch Thuật ---
-            is_auto_lang = not lang or lang in ["Auto-detect (Tự động)", "Tự động", "auto", ""]
+            is_auto_lang = not lang or lang in ["Auto-detect (Tự động)", "Tự động", "auto", ""] or lang.startswith("Auto-detect")
             need_translation = not is_auto_lang
             need_gemini = enable_speaker_diarization or need_translation
             

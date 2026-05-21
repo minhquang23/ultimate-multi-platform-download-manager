@@ -385,15 +385,20 @@ class App(ctk.CTk):
         cb_all.pack(side="left", anchor="w")
         
         lbl_lang = ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=140, anchor="center")
-        lbl_lang.grid(row=0, column=1, padx=(5,5))
+        lbl_lang.grid(row=0, column=1, padx=(5,5), sticky="w")
         
         self.check_all_sub_var = ctk.StringVar(value="on")
         cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub, width=95)
-        cb_all_sub.grid(row=0, column=2, padx=(5,5))
+        cb_all_sub.grid(row=0, column=2, padx=(5,5), sticky="w")
         
         self.check_all_whisper_var = ctk.StringVar(value="on")
         cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper, width=95)
-        cb_all_whisper.grid(row=0, column=3, padx=(5,5))
+        cb_all_whisper.grid(row=0, column=3, padx=(5,5), sticky="w")
+        
+        # Dummy status frame để cân bằng base width với các row_frame bên dưới
+        dummy_status = ctk.CTkFrame(header_frame, fg_color="transparent", width=150, height=28)
+        dummy_status.pack_propagate(False)
+        dummy_status.grid(row=0, column=4, padx=5, pady=2, sticky="ew")
         
         # Helper: Marquee event handlers
         def start_marquee(event, widget, full_text):
@@ -475,23 +480,27 @@ class App(ctk.CTk):
                 
             cb_sub_lang = ctk.CTkOptionMenu(row_frame, values=lang_options, width=140)
             cb_sub_lang.set(default_lang_display)
-            cb_sub_lang.grid(row=0, column=1, padx=(5,5), pady=2)
+            cb_sub_lang.grid(row=0, column=1, padx=(5,5), pady=2, sticky="w")
             
             # Checkbox Subtitle 📝 (chuyển sang Cột 2)
             var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
             cb_sub = ctk.CTkCheckBox(row_frame, text="📝", variable=var_sub, width=95)
-            cb_sub.grid(row=0, column=2, padx=(5,5), pady=2)
+            cb_sub.grid(row=0, column=2, padx=(5,5), pady=2, sticky="w")
             ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
                 
             # Checkbox Whisper 🎙️ (Cột 3)
             var_whisper = ctk.IntVar(value=1)
             cb_whisper = ctk.CTkCheckBox(row_frame, text="🎙️", variable=var_whisper, width=95)
-            cb_whisper.grid(row=0, column=3, padx=(5,5), pady=2)
+            cb_whisper.grid(row=0, column=3, padx=(5,5), pady=2, sticky="w")
             ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
 
             # Status label
-            lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
-            lbl_status.grid(row=0, column=4, padx=5, pady=2, sticky="ew")
+            status_container = ctk.CTkFrame(row_frame, fg_color="transparent", width=150, height=28)
+            status_container.pack_propagate(False)
+            status_container.grid(row=0, column=4, padx=5, pady=2, sticky="ew")
+            
+            lbl_status = ctk.CTkLabel(status_container, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
+            lbl_status.pack(fill="both", expand=True)
 
             # Lưu vào dictionary của app
             self.video_rows[url] = {

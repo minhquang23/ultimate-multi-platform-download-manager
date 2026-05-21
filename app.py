@@ -483,13 +483,11 @@ class App(ctk.CTk):
             cb_sub_lang.set(default_lang_display)
             cb_sub_lang.grid(row=0, column=2, padx=(2,10), pady=2)
             
-            # Disable logic
+            # Bỏ vô hiệu hóa (disabled) để người dùng có thể tự do chọn ngôn ngữ Đích muốn dịch sang sau khi Whisper nghe xong
             if item.get('is_local', False):
-                cb_sub_lang.configure(state="disabled")
+                pass
             elif not item.get('has_subtitles', False):
-                cb_sub.configure(state="disabled")
-                cb_sub_lang.configure(state="disabled")
-                var_sub.set(0)
+                pass
                 
             # Checkbox Whisper 🎙️
             var_whisper = ctk.IntVar(value=1)

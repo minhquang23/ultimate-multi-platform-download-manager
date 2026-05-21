@@ -78,15 +78,13 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
             log_callback("❌ Chưa nhập Gemini API Key trong phần Cài đặt!")
         return False
 
-    if log_callback:
-        log_callback("🔍 Đang tiền xử lý (Heuristics) file transcript...")
-        
     genai.configure(api_key=api_key)
-    # Cấu hình model, dùng Flash vì nhanh, rẻ và đọc hiểu tiếng Việt siêu tốt
+    
     model = genai.GenerativeModel(
         model_name=model_name,
         generation_config={
-            "temperature": 0.1, # Cần tính chính xác cao, ít sáng tạo
+            "temperature": 0.3,
+            "top_p": 0.9,
             "response_mime_type": "application/json",
         }
     )
@@ -104,16 +102,30 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
     annotated_results = []
     
     if log_callback:
-        log_callback(f"🧠 Bắt đầu gửi qua AI phân tích ({total_chunks} phần)...")
+        mode = "Phân tích & Dịch thuật" if target_lang else "Phân tích Người nói"
+        log_callback(f"🧠 Bắt đầu gửi qua AI để {mode} ({total_chunks} phần)...")
 
-    system_instruction = (
-        "Bạn là một chuyên gia phân tích hội thoại. Nhiệm vụ của bạn là gán tên người nói cho "
-        "từng đoạn văn bản dựa trên mốc thời gian. Hãy dựa vào văn cảnh (lời chào, tự giới thiệu, lời mời) "
-        "để suy luận tên người nói. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
-        '[{"time": "00:00:00 --> 00:00:05", "speaker": "Tên Người Nói", "text": "Nội dung gốc..."}]. '
-        "Nếu không xác định được tên thật, hãy dùng các nhãn như 'Host', 'Người tham gia', 'Speaker A'. "
-        "QUAN TRỌNG: KHÔNG ĐƯỢC dịch nội dung, BẮT BUỘC phải giữ nguyên ngôn ngữ gốc của văn bản (text)."
-    )
+    if target_lang and target_lang not in ["Auto-detect (Tự động)", "Tự động", "auto", ""]:
+        translation_instruction = f"BẠN CẦN PHẢI DỊCH TOÀN BỘ NỘI DUNG VĂN BẢN SANG NGÔN NGỮ: '{target_lang}'."
+    else:
+        translation_instruction = "QUAN TRỌNG: KHÔNG ĐƯỢC dịch nội dung, BẮT BUỘC phải giữ nguyên ngôn ngữ gốc của văn bản (text)."
+
+    if diarize:
+        system_instruction = (
+            "Bạn là một chuyên gia phân tích hội thoại. Nhiệm vụ của bạn là gán tên người nói cho "
+            "từng đoạn văn bản dựa trên mốc thời gian. Hãy dựa vào văn cảnh (lời chào, tự giới thiệu, lời mời) "
+            "để suy luận tên người nói. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
+            '[{"time": "00:00:00 --> 00:00:05", "speaker": "Tên Người Nói", "text": "Nội dung..."}]. '
+            "Nếu không xác định được tên thật, hãy dùng các nhãn như 'Host', 'Người tham gia', 'Speaker A'. "
+            f"{translation_instruction}"
+        )
+    else:
+        system_instruction = (
+            "Nhiệm vụ của bạn là định dạng và xử lý lại đoạn transcript. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
+            '[{"time": "00:00:00 --> 00:00:05", "speaker": "Speaker", "text": "Nội dung..."}]. '
+            "Hãy giữ nguyên các mốc thời gian và đặt tên speaker mặc định là 'Speaker'. "
+            f"{translation_instruction}"
+        )
 
     for i, chunk in enumerate(chunks):
         formatted_transcript = ""

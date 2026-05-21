@@ -791,8 +791,12 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                 elif log_callback:
                     log_callback("⚠️ Không tìm thấy file video để chạy Whisper. Hãy bật 'Tải Video' trong cài đặt.")
 
-            # --- Chạy Nhận diện Người Nói (Speaker Diarization) ---
-            if enable_speaker_diarization and gemini_api_key:
+            # --- Chạy Nhận diện Người Nói (Speaker Diarization) HOẶC Dịch Thuật ---
+            is_auto_lang = not lang or lang in ["Auto-detect (Tự động)", "Tự động", "auto", ""]
+            need_translation = not is_auto_lang
+            need_gemini = enable_speaker_diarization or need_translation
+            
+            if need_gemini and gemini_api_key:
                 txt_files = glob.glob(os.path.join(txt_dir, "*.txt"))
                 for txt_file in txt_files:
                     basename = os.path.basename(txt_file)
@@ -809,7 +813,9 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                         api_key=gemini_api_key,
                         model_name=gemini_model,
                         log_callback=log_callback,
-                        progress_callback=d_prog
+                        progress_callback=d_prog,
+                        target_lang=lang if need_translation else None,
+                        diarize=enable_speaker_diarization
                     )
                     
             if log_callback:

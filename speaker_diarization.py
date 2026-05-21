@@ -64,7 +64,7 @@ def chunk_segments(segments, chunk_size=50):
     """Chia nhỏ segments thành các chunk để không tràn token của LLM."""
     return [segments[i:i + chunk_size] for i in range(0, len(segments), chunk_size)]
 
-def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gemini-2.5-flash', log_callback=None, progress_callback=None):
+def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gemini-2.5-flash', log_callback=None, progress_callback=None, target_lang=None, diarize=False):
     """Luồng chính: Nhận diện người nói bằng Gemini 1.5 Flash."""
     try:
         import google.generativeai as genai

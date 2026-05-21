@@ -357,8 +357,7 @@ class App(ctk.CTk):
             row_frame.grid_columnconfigure(0, weight=4) # Title chiếm chỗ nhiều nhất
             row_frame.grid_columnconfigure(1, weight=0) # Checkbox sub
             row_frame.grid_columnconfigure(2, weight=0) # Checkbox whisper
-            row_frame.grid_columnconfigure(3, weight=2) # Status label
-            row_frame.grid_columnconfigure(4, weight=2) # Progress bar
+            row_frame.grid_columnconfigure(3, weight=4) # Status label (chiếm toàn bộ không gian còn lại)
 
             # Icon tương ứng với từng Platform
             platform_icons = {
@@ -397,19 +396,13 @@ class App(ctk.CTk):
             ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
 
             # Status label
-            lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11))
+            lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
             lbl_status.grid(row=0, column=3, padx=5, pady=2, sticky="w")
-
-            # Progress Bar
-            pb = ctk.CTkProgressBar(row_frame, width=160)
-            pb.grid(row=0, column=4, padx=5, pady=2, sticky="e")
-            pb.set(0.0)
 
             # Lưu vào dictionary của app
             self.video_rows[url] = {
                 'checkbox': cb,
                 'status_label': lbl_status,
-                'progress_bar': pb,
                 'var': var,
                 'var_sub': var_sub,
                 'var_whisper': var_whisper,
@@ -423,44 +416,36 @@ class App(ctk.CTk):
         """Callback cập nhật % tải của từng video lên GUI."""
         if url in self.video_rows:
             row = self.video_rows[url]
-            pb = row['progress_bar']
             lbl = row['status_label']
             
             if percent == -1.0:
-                self.after(0, lambda: pb.set(0.0))
                 self.after(0, lambda: lbl.configure(text="Thất bại ❌", text_color="#d62728"))
             elif percent == 100.0:
-                self.after(0, lambda: pb.set(1.0))
                 self.after(0, lambda: lbl.configure(text="Hoàn thành ✔️", text_color="#2ca02c"))
             else:
-                self.after(0, lambda: pb.set(percent / 100.0))
                 from history import format_size
                 downloaded_str = format_size(downloaded_bytes)
                 total_str = format_size(total_bytes)
                 status_text = f"Đang tải {percent:.1f}% ({downloaded_str}/{total_str})"
-                self.after(0, lambda: lbl.configure(text=status_text, text_color="#1f77b4"))
+                self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
 
     def update_diarization_progress(self, url, percent):
         """Callback cập nhật % nhận diện người nói."""
         if url in self.video_rows:
             row = self.video_rows[url]
-            pb = row['progress_bar']
             lbl = row['status_label']
             
-            self.after(0, lambda: pb.set(percent / 100.0))
             status_text = f"Phân tích người nói: {percent}%"
-            self.after(0, lambda: lbl.configure(text=status_text, text_color="#9467bd"))
+            self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
 
     def update_whisper_progress(self, url, percent, stats):
         """Callback cập nhật % tiến trình từ Whisper tqdm."""
         if url in self.video_rows:
             row = self.video_rows[url]
-            pb = row['progress_bar']
             lbl = row['status_label']
             
-            self.after(0, lambda: pb.set(percent / 100.0))
             status_text = f"Nhận diện âm thanh: {percent}% {stats}"
-            self.after(0, lambda: lbl.configure(text=status_text, text_color="#e377c2"))
+            self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
 
     def update_delay_countdown(self, url, remaining_seconds):
         """Callback cập nhật thời gian đếm ngược (khoảng nghỉ tránh bot) chính xác miligiây."""
@@ -513,9 +498,8 @@ class App(ctk.CTk):
         self.textbox_logs.delete("1.0", "end")
         self.textbox_logs.configure(state="disabled")
 
-        # Khởi động lại progress bars & labels
+        # Khởi động lại labels hiển thị tiến trình
         for url, row in selected_items:
-            row['progress_bar'].set(0.0)
             row['status_label'].configure(text="Đang chờ...", text_color="#aaa")
 
         tasks_to_process = []
@@ -602,7 +586,6 @@ class App(ctk.CTk):
                     # Nếu status còn dạng đang chờ/đang tải thì chuyển thành Hoàn thành nếu đã kết thúc phiên thành công
                     if "Đang tải" in txt or "Đang chờ" in txt or "Tránh bot" in txt:
                         self.after(0, lambda r=row: r['status_label'].configure(text="Hoàn thành ✔️", text_color="#2ca02c"))
-                        self.after(0, lambda r=row: r['progress_bar'].set(1.0))
 
     def reset_buttons(self):
         self.btn_scan.configure(state="normal")

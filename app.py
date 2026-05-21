@@ -4,6 +4,9 @@ import customtkinter as ctk
 import threading
 import datetime
 import os
+import glob
+import urllib.parse
+from PIL import Image
 import settings
 import history
 import hardware_scanner
@@ -11,6 +14,18 @@ from core import (
     process_multiple_urls, fetch_video_list,
     check_whisper_available, get_available_whisper_models, download_whisper_model
 )
+
+SUBTITLE_LANGUAGES = {
+    "en": "Tiếng Anh (en)",
+    "vi": "Tiếng Việt (vi)",
+    "ko": "Tiếng Hàn (ko)",
+    "ja": "Tiếng Nhật (ja)",
+    "zh-Hans": "Tiếng Trung (zh)",
+    "es": "Tây Ban Nha (es)",
+    "fr": "Tiếng Pháp (fr)",
+    "de": "Tiếng Đức (de)",
+    "ru": "Tiếng Nga (ru)"
+}
 
 class ToolTip(object):
     """Tạo ghi chú (Tooltip) khi di chuột qua Widget"""
@@ -356,8 +371,9 @@ class App(ctk.CTk):
             row_frame.pack(fill="x", expand=True, padx=5, pady=4)
             row_frame.grid_columnconfigure(0, weight=4) # Title chiếm chỗ nhiều nhất
             row_frame.grid_columnconfigure(1, weight=0) # Checkbox sub
-            row_frame.grid_columnconfigure(2, weight=0) # Checkbox whisper
-            row_frame.grid_columnconfigure(3, weight=4) # Status label (chiếm toàn bộ không gian còn lại)
+            row_frame.grid_columnconfigure(2, weight=0) # Dropdown sub lang
+            row_frame.grid_columnconfigure(3, weight=0) # Checkbox whisper
+            row_frame.grid_columnconfigure(4, weight=4) # Status label (chiếm toàn bộ không gian còn lại)
 
             # Icon tương ứng với từng Platform
             platform_icons = {
@@ -383,21 +399,35 @@ class App(ctk.CTk):
             # Checkbox Subtitle 📝
             var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
             cb_sub = ctk.CTkCheckBox(row_frame, text="📝", variable=var_sub, width=30)
-            cb_sub.grid(row=0, column=1, padx=(5,0), pady=2)
+            cb_sub.grid(row=0, column=1, padx=(5,2), pady=2)
             ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
+            
+            # Dropdown Ngôn ngữ Phụ đề
+            detected_lang = item.get('language') or 'en'
+            default_lang_display = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
+            
+            lang_options = list(SUBTITLE_LANGUAGES.values())
+            if default_lang_display not in lang_options:
+                lang_options.insert(0, default_lang_display)
+                
+            cb_sub_lang = ctk.CTkOptionMenu(row_frame, values=lang_options, width=140)
+            cb_sub_lang.set(default_lang_display)
+            cb_sub_lang.grid(row=0, column=2, padx=(2,10), pady=2)
+            
             if not item.get('has_subtitles', False) or item.get('is_local', False):
                 cb_sub.configure(state="disabled")
+                cb_sub_lang.configure(state="disabled")
                 var_sub.set(0)
                 
             # Checkbox Whisper 🎙️
             var_whisper = ctk.IntVar(value=1)
             cb_whisper = ctk.CTkCheckBox(row_frame, text="🎙️", variable=var_whisper, width=30)
-            cb_whisper.grid(row=0, column=2, padx=(5,10), pady=2)
+            cb_whisper.grid(row=0, column=3, padx=(5,10), pady=2)
             ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
 
             # Status label
             lbl_status = ctk.CTkLabel(row_frame, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
-            lbl_status.grid(row=0, column=3, padx=5, pady=2, sticky="w")
+            lbl_status.grid(row=0, column=4, padx=5, pady=2, sticky="w")
 
             # Lưu vào dictionary của app
             self.video_rows[url] = {
@@ -405,6 +435,7 @@ class App(ctk.CTk):
                 'status_label': lbl_status,
                 'var': var,
                 'var_sub': var_sub,
+                'cb_sub_lang': cb_sub_lang,
                 'var_whisper': var_whisper,
                 'title': title,
                 'is_local': item.get('is_local', False)
@@ -507,11 +538,22 @@ class App(ctk.CTk):
             use_sub = row['var_sub'].get() == 1
             use_whisper = row['var_whisper'].get() == 1
             is_local = row.get('is_local', False)
+            
+            lang_display = row['cb_sub_lang'].get()
+            lang_code = lang_display
+            for k, v in SUBTITLE_LANGUAGES.items():
+                if v == lang_display:
+                    lang_code = k
+                    break
+            if lang_code == lang_display and "(" in lang_display:
+                lang_code = lang_display.split("(")[-1].strip(")")
+                
             tasks_to_process.append({
                 'url': url,
                 'use_sub': use_sub,
                 'use_whisper': use_whisper,
-                'is_local': is_local
+                'is_local': is_local,
+                'lang': lang_code
             })
 
         # Khởi chạy luồng tải ngầm để tránh đơ giao diện
@@ -571,7 +613,7 @@ class App(ctk.CTk):
                 # Reset dashboard và lịch sử cuộn
                 self.after(0, self.update_dashboard)
                 
-        except Exception as e:
+        except BaseException as e:
             if "hủy" in str(e).lower() or "cancel" in str(e).lower():
                 self.log_message(f"❌ Tiến trình đã bị hủy bởi người dùng.")
             else:

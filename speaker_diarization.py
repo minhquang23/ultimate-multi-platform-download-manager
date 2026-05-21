@@ -111,7 +111,8 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
         "từng đoạn văn bản dựa trên mốc thời gian. Hãy dựa vào văn cảnh (lời chào, tự giới thiệu, lời mời) "
         "để suy luận tên người nói. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
         '[{"time": "00:00:00 --> 00:00:05", "speaker": "Tên Người Nói", "text": "Nội dung gốc..."}]. '
-        "Nếu không xác định được tên thật, hãy dùng các nhãn như 'Host', 'Người tham gia', 'Speaker A'."
+        "Nếu không xác định được tên thật, hãy dùng các nhãn như 'Host', 'Người tham gia', 'Speaker A'. "
+        "QUAN TRỌNG: KHÔNG ĐƯỢC dịch nội dung, BẮT BUỘC phải giữ nguyên ngôn ngữ gốc của văn bản (text)."
     )
 
     for i, chunk in enumerate(chunks):

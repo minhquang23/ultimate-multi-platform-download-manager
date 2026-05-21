@@ -173,7 +173,7 @@ def convert_vtt_to_txt(vtt_file_path, txt_dir):
 # Whisper AI: Transcribe từ file video/audio
 # ---------------------------------------------------------------------------
 
-class CancelException(Exception):
+class CancelException(BaseException):
     pass
 
 class TqdmInterceptor:
@@ -512,6 +512,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                             is_main = (main_v_id and v_id == main_v_id) or len(entries) == 1
                             
                             has_subs = bool(entry.get('subtitles') or entry.get('automatic_captions'))
+                            detected_lang = entry.get('language') or info.get('language')
 
                             results.append({
                                 'url': v_url, 
@@ -519,6 +520,8 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 'is_main': is_main, 
                                 'id': v_id, 
                                 'platform': platform,
+                                'language': detected_lang,
+
                                 'has_subtitles': has_subs,
                                 'is_local': False
                             })
@@ -858,8 +861,9 @@ def process_multiple_urls(tasks, lang='vi', output_dir='downloads', download_vid
     for i, task in enumerate(tasks):
         if cancel_event and cancel_event.is_set():
             break
-
         url = task['url']
+        video_lang = task.get('lang', lang)
+        
         # Khoảng nghỉ anti-bot (từ video thứ 2 trở đi)
         if i > 0 and not task.get('is_local', False):
             delay = random.uniform(float(delay_min), float(delay_max))
@@ -887,7 +891,7 @@ def process_multiple_urls(tasks, lang='vi', output_dir='downloads', download_vid
         # Tải video
         success, video_bytes = download_subtitles_for_url(
             task=task,
-            lang=lang,
+            lang=video_lang,
             output_dir=output_dir,
             download_video=download_video,
             browser=browser,

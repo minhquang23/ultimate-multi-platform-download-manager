@@ -545,7 +545,7 @@ class App(ctk.CTk):
             row = self.video_rows[url]
             lbl = row['status_label']
             
-            status_text = f"Nhận diện âm thanh: {percent}%"
+            status_text = f"{percent}%"
             self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
 
     def update_whisper_lang(self, url, lang_name):

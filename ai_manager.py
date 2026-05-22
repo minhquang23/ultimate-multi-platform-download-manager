@@ -213,12 +213,20 @@ class AIManager:
                     # Rate limited but valid key
                     is_valid = True
                     quota = "Đang quá tải (429)"
+                elif resp.status_code == 402:
+                    is_valid = False
+                    status = "Hết tiền (402)"
+                    quota = "Hết Credit"
                     
         except Exception as e:
             err = str(e)
             if "429" in err or "quota" in err.lower():
                 is_valid = True
                 quota = "Đang quá tải (429)"
+            elif "402" in err or "balance" in err.lower() or "credit limit" in err.lower():
+                is_valid = False
+                status = "Hết tiền (402)"
+                quota = "Hết Credit"
                 
         if is_valid:
             status = "Sẵn sàng"

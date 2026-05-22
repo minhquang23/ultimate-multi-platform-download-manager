@@ -1429,7 +1429,7 @@ class App(ctk.CTk):
                 color = "#eab308" # Vàng
             elif status_text == "Chưa xác thực":
                 color = "#888888" # Xám
-            elif "Lỗi" in status_text:
+            elif "Lỗi" in status_text or "402" in status_text:
                 color = "#d62728" # Đỏ
             else:
                 color = "#2ca02c" # Xanh

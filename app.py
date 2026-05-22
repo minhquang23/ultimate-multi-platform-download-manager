@@ -1454,7 +1454,8 @@ class App(ctk.CTk):
                 'divider': divider,
                 'widgets': [lbl_stt, frame_model, frame_key, lbl_quota, lbl_status, frame_actions],
                 'lbl_status': lbl_status,
-                'lbl_quota': lbl_quota
+                'lbl_quota': lbl_quota,
+                'model_idx': i
             })
             
             row_idx += 1
@@ -1471,6 +1472,30 @@ class App(ctk.CTk):
         
         btn_add_model = ctk.CTkButton(frame_bottom, text="➕ Thêm Model", command=self.open_add_model_dialog, fg_color="#1f538d")
         btn_add_model.pack(side="left", padx=15)
+        
+        def refresh_all_apis():
+            for row in self.ai_row_widgets:
+                idx = row['model_idx']
+                m_info = self.aim.get_models()[idx]
+                model_name = m_info['name']
+                api_key = m_info['api_key']
+                
+                if api_key.strip() != "":
+                    row['lbl_status'].configure(text="Đang kiểm tra...", text_color="#f97316")
+                    
+                    def verify_thread(r=row, m_name=model_name, key=api_key):
+                        is_valid, status, quota = self.aim.verify_api_key(m_name, key)
+                        def update_ui():
+                            if r['lbl_status'].winfo_exists():
+                                c = "#2ca02c" if is_valid else "#d62728"
+                                if status == "Thiếu API Key": c = "#eab308"
+                                r['lbl_status'].configure(text=status, text_color=c)
+                                r['lbl_quota'].configure(text=quota)
+                        self.after(0, update_ui)
+                    threading.Thread(target=verify_thread, daemon=True).start()
+                    
+        btn_refresh_all = ctk.CTkButton(frame_bottom, text="🔄 Làm Mới Xác Thực", command=refresh_all_apis, fg_color="#ea580c", hover_color="#c2410c")
+        btn_refresh_all.pack(side="left", padx=15)
         
         btn_save_models = ctk.CTkButton(frame_bottom, text="💾 Lưu Cài Đặt", command=self.flash_save_models, fg_color="green")
         btn_save_models.pack(side="left", padx=15)

@@ -1270,11 +1270,39 @@ class App(ctk.CTk):
         self.floating_drag_win = None
         self.hole_idx = -1
         
+        self._verify_timers = getattr(self, '_verify_timers', {})
+        
         def save_key(idx, val):
             m = self.aim.get_models()
             real_idx = self.current_order.index(idx) if hasattr(self, 'current_order') and idx in self.current_order else idx
             m[real_idx]['api_key'] = val
             self.aim.update_models(m)
+            
+            # Hủy timer cũ nếu đang gõ tiếp
+            if idx in self._verify_timers:
+                self.after_cancel(self._verify_timers[idx])
+                
+            def do_verify():
+                model_name = m[real_idx]['name']
+                if idx < len(self.ai_row_widgets):
+                    lbl_status = self.ai_row_widgets[idx]['lbl_status']
+                    lbl_quota = self.ai_row_widgets[idx]['lbl_quota']
+                    
+                    lbl_status.configure(text="Đang kiểm tra...", text_color="#f97316") # Cam
+                    
+                    def verify_thread():
+                        is_valid, status, quota = self.aim.verify_api_key(model_name, val)
+                        def update_ui():
+                            if idx < len(self.ai_row_widgets):
+                                c = "#2ca02c" if is_valid else "#d62728"
+                                if status == "Thiếu API Key": c = "#eab308"
+                                self.ai_row_widgets[idx]['lbl_status'].configure(text=status, text_color=c)
+                                self.ai_row_widgets[idx]['lbl_quota'].configure(text=quota)
+                        self.after(0, update_ui)
+                    
+                    threading.Thread(target=verify_thread, daemon=True).start()
+                    
+            self._verify_timers[idx] = self.after(1500, do_verify)
             
         def on_drag_start(event, original_idx):
             self.hole_idx = self.current_order.index(original_idx)
@@ -1395,10 +1423,14 @@ class App(ctk.CTk):
                 wait = max(0, int(m.get('refresh_wait', 60) - (time.time() - m.get('exhausted_time', 0))))
                 status_text = f"Đợi {wait}s"
                 color = "red"
-            elif "Test" in status_text:
+            elif "Test" in status_text or "kiểm tra" in status_text.lower():
                 color = "orange"
+            elif status_text == "Thiếu API Key":
+                color = "#eab308" # Vàng
+            elif "Lỗi" in status_text:
+                color = "#d62728" # Đỏ
             else:
-                color = "green"
+                color = "#2ca02c" # Xanh
             lbl_status = ctk.CTkLabel(self.scrollable_ai_models, text=status_text, text_color=color)
             lbl_status.grid(row=row_idx, column=4, padx=5, pady=8, sticky="w")
             
@@ -1420,7 +1452,9 @@ class App(ctk.CTk):
             
             self.ai_row_widgets.append({
                 'divider': divider,
-                'widgets': [lbl_stt, frame_model, frame_key, lbl_quota, lbl_status, frame_actions]
+                'widgets': [lbl_stt, frame_model, frame_key, lbl_quota, lbl_status, frame_actions],
+                'lbl_status': lbl_status,
+                'lbl_quota': lbl_quota
             })
             
             row_idx += 1

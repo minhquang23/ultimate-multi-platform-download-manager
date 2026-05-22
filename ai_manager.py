@@ -31,9 +31,9 @@ class AIManager:
                     "model": old_gemini_model if old_gemini_key else "gemini-2.5-flash",
                     "api_key": old_gemini_key,
                     "endpoint": "",
-                    "quota": "15 RPM | 1M TPM",
+                    "quota": "-",
                     "link": "https://aistudio.google.com/app/apikey",
-                    "status": "Sẵn sàng",
+                    "status": "Sẵn sàng" if old_gemini_key else "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -43,9 +43,9 @@ class AIManager:
                     "model": "llama-3.1-8b-instant",
                     "api_key": "",
                     "endpoint": "https://api.groq.com/openai/v1/chat/completions",
-                    "quota": "30 RPM | 6K TPM",
+                    "quota": "-",
                     "link": "https://console.groq.com/keys",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -55,9 +55,9 @@ class AIManager:
                     "model": "gpt-4o-mini",
                     "api_key": "",
                     "endpoint": "https://models.inference.ai.azure.com/chat/completions",
-                    "quota": "15 RPM | 150 RPD",
+                    "quota": "-",
                     "link": "https://github.com/marketplace/models",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -67,9 +67,9 @@ class AIManager:
                     "model": "google/gemma-2-9b-it:free",
                     "api_key": "",
                     "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-                    "quota": "20 RPM",
+                    "quota": "-",
                     "link": "https://openrouter.ai/keys",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                 },
                 {
@@ -78,9 +78,9 @@ class AIManager:
                     "model": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
                     "api_key": "",
                     "endpoint": "https://api.together.xyz/v1/chat/completions",
-                    "quota": "60 RPM",
+                    "quota": "-",
                     "link": "https://api.together.ai/settings/api-keys",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -90,9 +90,9 @@ class AIManager:
                     "model": "deepseek-chat",
                     "api_key": "",
                     "endpoint": "https://api.deepseek.com/chat/completions",
-                    "quota": "Bonus Credit",
+                    "quota": "-",
                     "link": "https://platform.deepseek.com/api_keys",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -102,9 +102,9 @@ class AIManager:
                     "model": "mistral-tiny",
                     "api_key": "",
                     "endpoint": "https://api.mistral.ai/v1/chat/completions",
-                    "quota": "Experiment Plan",
+                    "quota": "-",
                     "link": "https://console.mistral.ai/api-keys/",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 },
@@ -114,14 +114,23 @@ class AIManager:
                     "model": "Qwen/Qwen2.5-72B-Instruct",
                     "api_key": "",
                     "endpoint": "https://api-inference.huggingface.co/v1/chat/completions",
-                    "quota": "Dynamic",
+                    "quota": "-",
                     "link": "https://huggingface.co/settings/tokens",
-                    "status": "Sẵn sàng",
+                    "status": "Thiếu API Key",
                     "exhausted_time": 0,
                     "refresh_wait": 0
                 }
             ]
             self._save_models()
+        
+        # Dọn dẹp dữ liệu cũ (Xóa hardcoded quotas)
+        for m in self.models:
+            if m.get("api_key", "").strip() == "":
+                m["status"] = "Thiếu API Key"
+                m["quota"] = "-"
+            elif "RPM" in m.get("quota", "") and not m.get("verified", False):
+                m["quota"] = "Chưa xác định"
+        self._save_models()
         
         self.notifications = []
         self.on_notification_callback = None
@@ -129,6 +138,97 @@ class AIManager:
         # Bắt đầu luồng Polling ngầm
         self.polling_thread = threading.Thread(target=self._poll_exhausted_models, daemon=True)
         self.polling_thread.start()
+
+    def verify_api_key(self, model_name, api_key):
+        """Xác thực API Key thực tế và trích xuất hạn mức từ Header."""
+        target = next((m for m in self.models if m["name"] == model_name), None)
+        if not target:
+            return False, "Lỗi", "Không tìm thấy model"
+
+        if not api_key.strip():
+            target["status"] = "Thiếu API Key"
+            target["quota"] = "-"
+            target["api_key"] = ""
+            self._save_models()
+            return False, "Thiếu API Key", "-"
+            
+        provider = target["provider"]
+        endpoint = target.get("endpoint", "")
+        model_id = target["model"]
+        
+        quota = "Chưa xác định"
+        status = "Lỗi / Sai Key"
+        is_valid = False
+        
+        try:
+            if "openrouter.ai" in endpoint:
+                # OpenRouter auth endpoint
+                headers = {"Authorization": f"Bearer {api_key}"}
+                resp = requests.get("https://openrouter.ai/api/v1/auth/key", headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    is_valid = True
+                    data = resp.json()
+                    limit = data.get("data", {}).get("rate_limit")
+                    credits = data.get("data", {}).get("credit_limit")
+                    quota_parts = []
+                    if limit:
+                        quota_parts.append(f"{limit['requests']} RPM")
+                    if credits is not None:
+                        quota_parts.append(f"${credits}")
+                    if quota_parts:
+                        quota = " | ".join(quota_parts)
+            elif provider == "google":
+                # Google Gemini
+                genai.configure(api_key=api_key)
+                m = genai.GenerativeModel(model_id)
+                # Send minimum payload
+                m.generate_content("hi")
+                is_valid = True
+                # Gemini doesn't expose headers through SDK easily
+            else:
+                # Other OpenAI compatible (Groq, Together, DeepSeek, Mistral, HuggingFace, GitHub)
+                if not endpoint:
+                    endpoint = "https://api.openai.com/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+                resp = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+                
+                if resp.status_code == 200:
+                    is_valid = True
+                    # Extract standard rate limit headers
+                    rem_req = resp.headers.get("x-ratelimit-remaining-requests") or resp.headers.get("x-ratelimit-limit-requests")
+                    rem_tok = resp.headers.get("x-ratelimit-remaining-tokens") or resp.headers.get("x-ratelimit-limit-tokens")
+                    
+                    if not rem_req and not rem_tok:
+                        # Groq uses standard ones, but check variations
+                        rem_req = resp.headers.get("x-ratelimit-limit-requests", "")
+                    
+                    quota_parts = []
+                    if rem_req: quota_parts.append(f"{rem_req} req")
+                    if rem_tok: quota_parts.append(f"{rem_tok} tok")
+                    if quota_parts:
+                        quota = " | ".join(quota_parts)
+                elif resp.status_code == 429:
+                    # Rate limited but valid key
+                    is_valid = True
+                    quota = "Đang quá tải (429)"
+                    
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "quota" in err.lower():
+                is_valid = True
+                quota = "Đang quá tải (429)"
+                
+        if is_valid:
+            status = "Sẵn sàng"
+            target["verified"] = True
+            
+        target["api_key"] = api_key
+        target["status"] = status
+        target["quota"] = quota
+        self._save_models()
+        
+        return is_valid, status, quota
 
     def _save_models(self):
         current_settings = settings.load_settings()

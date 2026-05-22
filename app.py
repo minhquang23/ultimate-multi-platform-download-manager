@@ -1427,6 +1427,8 @@ class App(ctk.CTk):
                 color = "orange"
             elif status_text == "Thiếu API Key":
                 color = "#eab308" # Vàng
+            elif status_text == "Chưa xác thực":
+                color = "#888888" # Xám
             elif "Lỗi" in status_text:
                 color = "#d62728" # Đỏ
             else:

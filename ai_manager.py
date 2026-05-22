@@ -128,7 +128,8 @@ class AIManager:
             if m.get("api_key", "").strip() == "":
                 m["status"] = "Thiếu API Key"
                 m["quota"] = "-"
-            elif "RPM" in m.get("quota", "") and not m.get("verified", False):
+            elif not m.get("verified", False):
+                m["status"] = "Chưa xác thực"
                 m["quota"] = "Chưa xác định"
         self._save_models()
         

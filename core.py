@@ -467,6 +467,26 @@ def download_whisper_model(model_name, model_dir='models/whisper', log_callback=
 # Fetch: Quét danh sách URL → thông tin video
 # ---------------------------------------------------------------------------
 
+def guess_language_from_title(title):
+    title = title.lower()
+    if 'tiếng trung' in title or 'chinese' in title:
+        return 'zh'
+    if 'tiếng anh' in title or 'english' in title:
+        return 'en'
+    if 'tiếng việt' in title or 'vietnamese' in title:
+        return 'vi'
+    if 'tiếng nhật' in title or 'japanese' in title:
+        return 'ja'
+    if 'tiếng hàn' in title or 'korean' in title:
+        return 'ko'
+    if 'tiếng pháp' in title or 'french' in title:
+        return 'fr'
+    if 'tiếng nga' in title or 'russian' in title:
+        return 'ru'
+    if 'tiếng tây ban nha' in title or 'spanish' in title:
+        return 'es'
+    return None
+
 def fetch_video_list(urls, browser='chrome', log_callback=None):
     """
     Quét danh sách URL để lấy thông tin các video.
@@ -542,11 +562,11 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 continue
                             v_id = entry.get('id', '')
                             title = entry.get('title', 'Unknown Title')
-                            v_url = entry.get('url') or f"https://www.youtube.com/watch?v={v_id}"
+                            v_url = entry.get('webpage_url') or (f"https://www.youtube.com/watch?v={v_id}" if v_id else url)
                             is_main = (main_v_id and v_id == main_v_id) or len(entries) == 1
                             
                             has_subs = bool(entry.get('subtitles') or entry.get('automatic_captions'))
-                            detected_lang = entry.get('language') or info.get('language')
+                            detected_lang = entry.get('language') or info.get('language') or guess_language_from_title(title)
 
                             results.append({
                                 'url': v_url, 
@@ -579,6 +599,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 'is_main': True, 
                                 'id': v_id, 
                                 'platform': platform,
+                                'language': guess_language_from_title(title),
                                 'has_subtitles': False,
                                 'is_local': False
                             })
@@ -636,8 +657,7 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                                browser='chrome', video_quality='1080p',
                                whisper_model='medium', whisper_device='auto',
                                whisper_model_dir='models/whisper',
-                               enable_speaker_diarization=False, gemini_api_key='',
-                               gemini_model='gemini-2.5-flash',
+                               enable_speaker_diarization=False,
                                progress_callback=None, log_callback=None, diarization_progress_callback=None,
                                whisper_progress_callback=None, cancel_event=None, whisper_lang_callback=None):
     """
@@ -738,6 +758,10 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
         'ignoreerrors': True,
         'progress_hooks': [my_hook]
     }
+
+    ffmpeg_exe = get_ffmpeg_path()
+    if ffmpeg_exe:
+        ydl_opts['ffmpeg_location'] = ffmpeg_exe
 
     # Phụ đề: chỉ tải nếu là YouTube và ở chế độ prefer_subtitle
     if use_subtitle:
@@ -840,7 +864,7 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
             need_translation = not is_auto_lang
             need_gemini = enable_speaker_diarization or need_translation
             
-            if need_gemini and gemini_api_key:
+            if need_gemini:
                 txt_files = glob.glob(os.path.join(txt_dir, "*.txt"))
                 for txt_file in txt_files:
                     basename = os.path.basename(txt_file)
@@ -854,8 +878,6 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                     speaker_diarization.process_transcript(
                         input_txt_path=txt_file,
                         output_txt_path=output_txt_path,
-                        api_key=gemini_api_key,
-                        model_name=gemini_model,
                         log_callback=log_callback,
                         progress_callback=d_prog,
                         target_lang=lang if need_translation else None,
@@ -893,11 +915,10 @@ def process_multiple_urls(tasks, lang='vi', output_dir='downloads', download_vid
                           video_quality='1080p',
                           whisper_model='medium', whisper_device='auto',
                           whisper_model_dir='models/whisper',
-                          enable_speaker_diarization=False, gemini_api_key='',
-                          gemini_model='gemini-2.5-flash',
+                          enable_speaker_diarization=False,
                           progress_callback=None, delay_callback=None, log_callback=None, 
                           diarization_progress_callback=None, whisper_progress_callback=None,
-                          cancel_event=None):
+                          cancel_event=None, whisper_lang_callback=None):
     """
     Xử lý danh sách task tuần tự với khoảng nghỉ chống quét bot (chính xác milisecond).
     """
@@ -951,13 +972,12 @@ def process_multiple_urls(tasks, lang='vi', output_dir='downloads', download_vid
             whisper_device=whisper_device,
             whisper_model_dir=whisper_model_dir,
             enable_speaker_diarization=enable_speaker_diarization,
-            gemini_api_key=gemini_api_key,
-            gemini_model=gemini_model,
             progress_callback=progress_callback,
             log_callback=log_callback,
             diarization_progress_callback=diarization_progress_callback,
             whisper_progress_callback=whisper_progress_callback,
-            cancel_event=cancel_event
+            cancel_event=cancel_event,
+            whisper_lang_callback=whisper_lang_callback
         )
 
         if success:

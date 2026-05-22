@@ -64,8 +64,8 @@ def chunk_segments(segments, chunk_size=50):
     """Chia nhỏ segments thành các chunk để không tràn token của LLM."""
     return [segments[i:i + chunk_size] for i in range(0, len(segments), chunk_size)]
 
-def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gemini-2.5-flash', log_callback=None, progress_callback=None, target_lang=None, diarize=False, cancel_event=None):
-    """Luồng chính: Nhận diện người nói bằng Gemini 1.5 Flash."""
+def process_transcript(input_txt_path, output_txt_path, log_callback=None, progress_callback=None, target_lang=None, diarize=False, cancel_event=None):
+    """Luồng chính: Nhận diện người nói bằng AI Fallback Matrix."""
     try:
         import google.generativeai as genai
     except ImportError:
@@ -73,21 +73,8 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
             log_callback("❌ Chưa cài thư viện google-generativeai. Vui lòng chạy pip install google-generativeai.")
         return False
 
-    if not api_key:
-        if log_callback:
-            log_callback("❌ Chưa nhập Gemini API Key trong phần Cài đặt!")
-        return False
-
-    genai.configure(api_key=api_key)
-    
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        generation_config={
-            "temperature": 0.3,
-            "top_p": 0.9,
-            "response_mime_type": "application/json",
-        }
-    )
+    import ai_manager
+    aim = ai_manager.AIManager()
 
     segments = parse_transcript(input_txt_path)
     if not segments:
@@ -96,7 +83,8 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
         return False
 
     anchors = extract_anchors(segments)
-    chunks = chunk_segments(segments, chunk_size=40)
+    chunk_size = 60 if target_lang and target_lang not in ["Auto-detect (Tự động)", "Tự động", "auto", ""] else 150
+    chunks = chunk_segments(segments, chunk_size=chunk_size)
     
     total_chunks = len(chunks)
     annotated_results = []
@@ -105,27 +93,47 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
         mode = "Phân tích & Dịch thuật" if target_lang else "Phân tích Người nói"
         log_callback(f"🧠 Bắt đầu gửi qua AI để {mode} ({total_chunks} phần)...")
 
-    if target_lang and target_lang not in ["Auto-detect (Tự động)", "Tự động", "auto", ""]:
+    is_translation = target_lang and target_lang not in ["Auto-detect (Tự động)", "Tự động", "auto", ""]
+    if is_translation:
         translation_instruction = f"BẠN CẦN PHẢI DỊCH TOÀN BỘ NỘI DUNG VĂN BẢN SANG NGÔN NGỮ: '{target_lang}'."
     else:
         translation_instruction = "QUAN TRỌNG: KHÔNG ĐƯỢC dịch nội dung, BẮT BUỘC phải giữ nguyên ngôn ngữ gốc của văn bản (text)."
 
     if diarize:
-        system_instruction = (
-            "Bạn là một chuyên gia phân tích hội thoại. Nhiệm vụ của bạn là gán tên người nói cho "
-            "từng đoạn văn bản dựa trên mốc thời gian. Hãy dựa vào văn cảnh (lời chào, tự giới thiệu, lời mời) "
-            "để suy luận tên người nói. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
-            '[{"time": "00:00:00 --> 00:00:05", "speaker": "Tên Người Nói", "text": "Nội dung..."}]. '
-            "Nếu không xác định được tên thật, hãy dùng các nhãn như 'Host', 'Người tham gia', 'Speaker A'. "
-            f"{translation_instruction}"
-        )
+        if is_translation:
+            system_instruction = (
+                "Bạn là một chuyên gia phân tích hội thoại. Nhiệm vụ của bạn là gán tên người nói cho "
+                "từng đoạn văn bản dựa trên mốc thời gian và DỊCH nội dung. Hãy dựa vào văn cảnh "
+                "để suy luận tên người nói. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
+                '[{"id": 1, "speaker": "Tên Người Nói", "text": "Nội dung dịch..."}]. '
+                "Nếu không xác định được tên thật, hãy dùng 'Host', 'Khách mời'. "
+                f"{translation_instruction}"
+            )
+        else:
+            system_instruction = (
+                "Bạn là một chuyên gia phân tích hội thoại. Nhiệm vụ của bạn là gán tên người nói cho "
+                "từng đoạn văn bản được đánh số [ID]. Hãy dựa vào văn cảnh để suy luận tên người nói. "
+                "ĐỂ TIẾT KIỆM TOKEN, BẠN CHỈ TRẢ VỀ ID VÀ SPEAKER. Dữ liệu trả về BẮT BUỘC phải là mảng JSON: "
+                '[{"id": 1, "speaker": "Tên Người Nói"}, {"id": 2, "speaker": "Host"}]. '
+                "Tuyệt đối KHÔNG trả về nội dung (text) hay thời gian. "
+                "Nếu không xác định được tên thật, hãy dùng 'Host', 'Khách mời'. "
+                f"{translation_instruction}"
+            )
     else:
-        system_instruction = (
-            "Nhiệm vụ của bạn là định dạng và xử lý lại đoạn transcript. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
-            '[{"time": "00:00:00 --> 00:00:05", "speaker": "Speaker", "text": "Nội dung..."}]. '
-            "Hãy giữ nguyên các mốc thời gian và đặt tên speaker mặc định là 'Speaker'. "
-            f"{translation_instruction}"
-        )
+        if is_translation:
+            system_instruction = (
+                "Nhiệm vụ của bạn là dịch đoạn transcript. Dữ liệu trả về BẮT BUỘC phải là mảng JSON chứa các object: "
+                '[{"id": 1, "speaker": "Speaker", "text": "Nội dung dịch..."}]. '
+                "Đặt tên speaker mặc định là 'Speaker'. "
+                f"{translation_instruction}"
+            )
+        else:
+            system_instruction = (
+                "Nhiệm vụ của bạn là định dạng đoạn transcript. CHỈ TRẢ VỀ ID VÀ SPEAKER. Dữ liệu trả về BẮT BUỘC phải là mảng JSON: "
+                '[{"id": 1, "speaker": "Speaker"}]. '
+                "Đặt tên speaker mặc định là 'Speaker'. Tuyệt đối KHÔNG trả về text hay time. "
+                f"{translation_instruction}"
+            )
 
     for i, chunk in enumerate(chunks):
         if cancel_event and cancel_event.is_set():
@@ -134,8 +142,8 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
             break
             
         formatted_transcript = ""
-        for seg in chunk:
-            formatted_transcript += f"[{seg['time']}] {seg['text']}\n"
+        for idx, seg in enumerate(chunk):
+            formatted_transcript += f"[ID: {idx+1}] [{seg['time']}] {seg['text']}\n"
             
         user_prompt = f"""
         HƯỚNG DẪN:
@@ -153,67 +161,49 @@ def process_transcript(input_txt_path, output_txt_path, api_key, model_name='gem
         
         while retry_count < max_retries and not success:
             try:
-                # Truyền system instruction vào chung nội dung
-                response = model.generate_content(system_instruction + "\n\n" + user_prompt)
-                clean_text = response.text.strip()
-                if clean_text.startswith("```json"):
-                    clean_text = clean_text[7:]
-                elif clean_text.startswith("```"):
-                    clean_text = clean_text[3:]
-                if clean_text.endswith("```"):
-                    clean_text = clean_text[:-3]
-                clean_text = clean_text.strip()
-                
+                # Gọi qua AIManager để xử lý cơ chế multi-model fallback
+                clean_text = aim.generate_diarization(system_instruction, user_prompt, log_callback, cancel_event)
+                if not clean_text:
+                    raise Exception("Không thể nhận kết quả từ AI Manager.")
+                    
                 chunk_result = json.loads(clean_text)
                 
-                # Gộp kết quả
+                # Gộp kết quả và map lại thời gian/văn bản
                 if isinstance(chunk_result, list):
-                    annotated_results.extend(chunk_result)
+                    for item in chunk_result:
+                        idx = item.get("id")
+                        if isinstance(idx, int) and 1 <= idx <= len(chunk):
+                            seg = chunk[idx - 1]
+                            annotated_results.append({
+                                "time": seg["time"],
+                                "speaker": item.get("speaker", "Speaker"),
+                                "text": item.get("text") if is_translation else seg["text"]
+                            })
                     
                 # Cập nhật tiến độ %
                 if progress_callback:
                     percent = int(((i + 1) / total_chunks) * 100)
                     progress_callback(percent)
                     
-                # Tránh Rate Limit của Gemini Free Tier (15 RPM -> nghỉ 4.5s mỗi request)
-                import time
-                if cancel_event:
-                    if cancel_event.wait(4.5):
-                        break
-                else:
-                    time.sleep(4.5)
                 success = True
                     
             except Exception as e:
                 err_msg = str(e)
-                import time
-                import re
-                
-                if "429" in err_msg or "Quota exceeded" in err_msg:
-                    # Lỗi vượt quá Rate Limit, tìm thời gian cần đợi
-                    wait_time = 60 # Mặc định đợi 60s
-                    match = re.search(r"retry in (\d+\.?\d*)s", err_msg)
-                    if match:
-                        wait_time = float(match.group(1)) + 1.0 # Cộng 1s an toàn
-                        
-                    if log_callback:
-                        log_callback(f"⏳ Quá giới hạn API ở đoạn {i+1}. Tạm nghỉ {wait_time:.1f}s để hồi phục (thử lại lần {retry_count+1}/3)...")
+                if log_callback:
+                    log_callback(f"⚠️ Lỗi phân tích: {err_msg}")
                     
+                # Nếu lỗi không phải rate limit (vì AIManager đã xử lý chuyển model cho rate limit)
+                if "tất cả các model đều quá tải" in err_msg.lower() or "không có api key" in err_msg.lower():
+                    # Đợi 10s rồi thử lại vòng lặp ngoài cùng của file này (để AIManager có thời gian ping)
+                    import time
                     if cancel_event:
-                        if cancel_event.wait(wait_time):
-                            if log_callback: log_callback("🛑 Đã hủy tiến trình trong lúc chờ API.")
-                            break # Thoát khỏi vòng lặp retry ngay lập tức
+                        if cancel_event.wait(10.0):
+                            break
                     else:
-                        time.sleep(wait_time)
-                        
+                        time.sleep(10.0)
                     retry_count += 1
                 else:
-                    if log_callback:
-                        log_callback(f"⚠️ Cảnh báo: Lỗi phân tích ở đoạn {i+1}/{total_chunks}. Chi tiết: {err_msg}")
-                    
-                    with open(output_txt_path + ".error.log", "a", encoding="utf-8") as f_err:
-                        f_err.write(f"Chunk {i+1} error: {err_msg}\n")
-                    break # Thoát vòng lặp while, không retry nếu không phải lỗi 429
+                    break # Lỗi parse json, v.v. thì fallback luôn
                     
         if not success:
             # Fallback nếu vượt quá số lần thử hoặc lỗi không mong muốn

@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, Toplevel, Label
 import customtkinter as ctk
 import threading
+import ai_manager
 import datetime
 import os
 import glob
@@ -21,6 +22,7 @@ SUBTITLE_LANGUAGES = {
     "ko": "Tiếng Hàn (ko)",
     "ja": "Tiếng Nhật (ja)",
     "zh-Hans": "Tiếng Trung (zh)",
+    "zh": "Tiếng Trung (zh)",
     "es": "Tây Ban Nha (es)",
     "fr": "Tiếng Pháp (fr)",
     "de": "Tiếng Đức (de)",
@@ -469,10 +471,9 @@ class App(ctk.CTk):
 
             # Text hiển thị Ngôn ngữ (chuyển sang Cột 1)
             detected_lang = item.get('language')
-            if item.get('is_local', False):
+            if item.get('is_local', False) or not detected_lang:
                 default_lang_display = "Auto-detect"
             else:
-                detected_lang = detected_lang or 'en'
                 default_lang_display = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
                 
             lbl_lang_val = ctk.CTkLabel(row_frame, text=default_lang_display, text_color="#2b7a78", width=120, anchor="w")
@@ -491,11 +492,16 @@ class App(ctk.CTk):
             ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
 
             # Status label
-            status_container = ctk.CTkFrame(row_frame, fg_color="transparent", width=110, height=28)
+            status_container = ctk.CTkFrame(row_frame, fg_color="transparent", width=180, height=28)
             status_container.pack_propagate(False)
             status_container.grid(row=0, column=4, padx=10, pady=2, sticky="e")
             
-            lbl_status = ctk.CTkLabel(status_container, text="Sẵn sàng", text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
+            if not item.get('has_subtitles', False) and not item.get('is_local', False):
+                initial_status = "❌ Ko Sub YT"
+            else:
+                initial_status = "Sẵn sàng"
+                
+            lbl_status = ctk.CTkLabel(status_container, text=initial_status, text_color="#aaa", font=ctk.CTkFont(size=11, weight="bold"))
             lbl_status.pack(fill="both", expand=True)
 
             # Lưu vào dictionary của app
@@ -513,6 +519,22 @@ class App(ctk.CTk):
             
         self.reset_buttons()
 
+    def update_whisper_lang(self, url, detected_lang):
+        """Callback cập nhật ngôn ngữ và tick checkbox khi Whisper phát hiện ngôn ngữ thật."""
+        if url in self.video_rows:
+            def _update():
+                row = self.video_rows[url]
+                display_lang = SUBTITLE_LANGUAGES.get(detected_lang, f"{detected_lang.upper()} ({detected_lang})")
+                row['lbl_lang_val'].configure(text=display_lang, text_color="#2b7a78")
+                
+                # Tự động tick checkbox Sub theo yêu cầu
+                row['cb_sub'].configure(state="normal")
+                row['var_sub'].set(1)
+                
+                # Cập nhật Status
+                row['status_label'].configure(text="Sub/Transcript bởi Whisper", text_color="#2ca02c")
+            self.after(0, _update)
+
     def update_video_progress(self, url, percent, downloaded_bytes, total_bytes):
         """Callback cập nhật % tải của từng video lên GUI."""
         if url in self.video_rows:
@@ -527,7 +549,7 @@ class App(ctk.CTk):
                 from history import format_size
                 downloaded_str = format_size(downloaded_bytes)
                 total_str = format_size(total_bytes)
-                status_text = f"Đang tải {percent:.1f}% ({downloaded_str}/{total_str})"
+                status_text = f"{percent:.1f}% ({downloaded_str}/{total_str})"
                 self.after(0, lambda: lbl.configure(text=status_text, text_color="#a855f7"))
 
     def update_diarization_progress(self, url, percent):
@@ -668,8 +690,6 @@ class App(ctk.CTk):
         whisper_device = self.app_settings.get("whisper_device", "auto")
         whisper_model_dir = self.app_settings.get("whisper_model_dir", "models/whisper")
         enable_speaker_diarization = self.app_settings.get("enable_speaker_diarization", False)
-        gemini_api_key = self.app_settings.get("gemini_api_key", "")
-        gemini_model = self.app_settings.get("gemini_model", "gemini-2.5-flash")
 
         try:
             success_count, total_bytes, duration = process_multiple_urls(
@@ -685,14 +705,13 @@ class App(ctk.CTk):
                 whisper_device=whisper_device,
                 whisper_model_dir=whisper_model_dir,
                 enable_speaker_diarization=enable_speaker_diarization,
-                gemini_api_key=gemini_api_key,
-                gemini_model=gemini_model,
                 progress_callback=self.update_video_progress,
                 delay_callback=self.update_delay_countdown,
                 log_callback=self.log_message,
                 diarization_progress_callback=self.update_diarization_progress,
                 whisper_progress_callback=self.update_whisper_progress,
-                cancel_event=self.cancel_event
+                cancel_event=self.cancel_event,
+                whisper_lang_callback=self.update_whisper_lang
             )
 
             # Lưu vào lịch sử nếu tải thành công
@@ -963,23 +982,16 @@ class App(ctk.CTk):
             self.cb_speaker_diarization.deselect()
         row += 1
 
-        ctk.CTkLabel(self.settings_scroll, text="Chọn Mô hình Gemini:").grid(row=row, column=0, padx=15, pady=4, sticky="w")
-        self.menu_gemini_model = ctk.CTkOptionMenu(
-            self.settings_scroll,
-            values=["gemini-2.5-flash", "gemini-3-flash"]
+        # --- DEV MODE ---
+        self.btn_dev_mode = ctk.CTkButton(
+            self.settings_scroll, text="🔒", width=30, fg_color="transparent", text_color="gray", hover_color="#333333",
+            command=self.toggle_dev_mode
         )
-        self.menu_gemini_model.grid(row=row, column=1, padx=15, pady=4, sticky="w")
-        self.menu_gemini_model.set(self.app_settings.get("gemini_model", "gemini-2.5-flash")); row += 1
-
-        ctk.CTkLabel(self.settings_scroll, text="Gemini API Key:").grid(row=row, column=0, padx=15, pady=4, sticky="w")
-        self.entry_gemini_key = ctk.CTkEntry(self.settings_scroll, width=280, show="*")
-        self.entry_gemini_key.grid(row=row, column=1, padx=15, pady=4, sticky="w")
-        self.entry_gemini_key.insert(0, self.app_settings.get("gemini_api_key", "")); row += 1
-
-        # Hướng dẫn lấy key
-        lbl_key_guide = ctk.CTkLabel(self.settings_scroll, text="Chưa có Key? Lấy miễn phí tại: https://aistudio.google.com/app/apikey", text_color="#4fc1ff", cursor="hand2", font=ctk.CTkFont(size=10, underline=True))
-        lbl_key_guide.grid(row=row, column=0, columnspan=2, padx=15, pady=(0, 6), sticky="w")
-        lbl_key_guide.bind("<Button-1>", lambda e: os.startfile("https://aistudio.google.com/app/apikey")); row += 1
+        self.btn_dev_mode.grid(row=row, column=0, padx=15, pady=4, sticky="w")
+        row += 1
+        
+        self.aim = ai_manager.AIManager()
+        self.aim.set_notification_callback(self.on_ai_notification)
 
         # Divider
         ctk.CTkLabel(self.settings_scroll, text="─" * 60, text_color="#444").grid(
@@ -991,13 +1003,16 @@ class App(ctk.CTk):
 
         self.btn_save_settings = ctk.CTkButton(
             self.settings_scroll,
-            text="💾 Lưu Tất Cả Cấu Hình",
+            text="💾 Lưu",
             command=self.save_app_settings,
+            state="disabled",
             fg_color="green",
             hover_color="darkgreen",
             font=ctk.CTkFont(weight="bold")
         )
         self.btn_save_settings.grid(row=row, column=0, columnspan=2, padx=15, pady=(4, 20))
+        
+        self.check_settings_changed()
 
     def update_hardware_requirement_label(self, *args):
         """Quét cấu hình phần cứng thực tế và đánh giá độ tương thích của cấu hình được chọn."""
@@ -1202,6 +1217,382 @@ class App(ctk.CTk):
 
         threading.Thread(target=_do_download, daemon=True).start()
 
+    def on_ai_notification(self):
+        # Có thông báo mới -> Chấm đỏ
+        self.btn_dev_mode.configure(text="🔒 (🔴)")
+        self.build_ai_models_tab()
+
+    def toggle_dev_mode(self):
+        try:
+            self.tabview.tab("[DEV] AI Manager")
+            exists = True
+        except ValueError:
+            exists = False
+
+        if exists:
+            self.tabview.delete("[DEV] AI Manager")
+            self.btn_dev_mode.configure(text="🔒") # Clear red dot khi ẩn
+            self.aim.clear_notifications()
+        else:
+            dialog = ctk.CTkInputDialog(text="Nhập mật khẩu Dev Mode:", title="Dev Mode")
+            if dialog.get_input() == "minhhq":
+                self.tab_dev_mode = self.tabview.add("[DEV] AI Manager")
+                self.build_ai_models_tab()
+                self.btn_dev_mode.configure(text="🔓")
+                self.aim.clear_notifications()
+                self.tabview.set("[DEV] AI Manager")
+            else:
+                self.lbl_save_status.configure(text="Sai mật khẩu!", text_color="red")
+
+    def build_ai_models_tab(self):
+        try:
+            self.tabview.tab("[DEV] AI Manager")
+        except ValueError:
+            return # Tab doesn't exist
+
+        for widget in self.tab_dev_mode.winfo_children():
+            widget.destroy()
+
+        self.scrollable_ai_models = ctk.CTkScrollableFrame(self.tab_dev_mode)
+        self.scrollable_ai_models.pack(fill="both", expand=True, padx=5, pady=5)
+            
+        header_font = ctk.CTkFont(weight="bold", size=13)
+        ctk.CTkLabel(self.scrollable_ai_models, text="STT", width=40, font=header_font).grid(row=0, column=0, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.scrollable_ai_models, text="Mô hình (Model)", width=180, anchor="w", font=header_font).grid(row=0, column=1, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.scrollable_ai_models, text="API Key", width=250, anchor="w", font=header_font).grid(row=0, column=2, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.scrollable_ai_models, text="Hạn mức (Quota)", width=120, anchor="w", font=header_font).grid(row=0, column=3, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.scrollable_ai_models, text="Trạng thái", width=100, anchor="w", font=header_font).grid(row=0, column=4, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.scrollable_ai_models, text="Thao tác", width=120, anchor="w", font=header_font).grid(row=0, column=5, padx=5, pady=10, sticky="w")
+        
+        models = self.aim.get_models()
+        self.ai_row_widgets = []
+        self.current_order = list(range(len(models)))
+        self.floating_drag_win = None
+        self.hole_idx = -1
+        
+        def save_key(idx, val):
+            m = self.aim.get_models()
+            real_idx = self.current_order.index(idx) if hasattr(self, 'current_order') and idx in self.current_order else idx
+            m[real_idx]['api_key'] = val
+            self.aim.update_models(m)
+            
+        def on_drag_start(event, original_idx):
+            self.hole_idx = self.current_order.index(original_idx)
+            dragged_model = models[original_idx]
+            
+            # Hide the widgets of the hole
+            for w in self.ai_row_widgets[original_idx]['widgets']:
+                w.grid_remove()
+            if self.ai_row_widgets[original_idx]['divider']:
+                self.ai_row_widgets[original_idx]['divider'].grid_remove()
+                
+            # Create floating window
+            self.floating_drag_win = ctk.CTkToplevel(self)
+            self.floating_drag_win.overrideredirect(True)
+            self.floating_drag_win.attributes("-topmost", True)
+            self.floating_drag_win.geometry(f"500x40+{event.x_root - 450}+{event.y_root - 20}")
+            
+            frame = ctk.CTkFrame(self.floating_drag_win, fg_color="#1f538d", border_color="#4fc1ff", border_width=1)
+            frame.pack(fill="both", expand=True)
+            ctk.CTkLabel(frame, text=f"🔄 Đang kéo: {dragged_model['name']}", font=ctk.CTkFont(weight="bold")).pack(pady=8)
+            
+        def on_drag_motion(event):
+            if not self.floating_drag_win: return
+            self.floating_drag_win.geometry(f"+{event.x_root - 450}+{event.y_root - 20}")
+            
+            # Tính toán vị trí chuột so với ScrollableFrame
+            scroll_y = self.scrollable_ai_models.winfo_rooty()
+            rel_y = event.y_root - scroll_y
+            
+            # Chiều cao trung bình 1 dòng ~ 45px, offset header ~ 40px
+            row_height = 45
+            target_idx = int(max(0, min(len(self.current_order)-1, (rel_y - 40) / row_height)))
+            
+            if target_idx != self.hole_idx:
+                # Hoán đổi trong mảng current_order
+                item = self.current_order.pop(self.hole_idx)
+                self.current_order.insert(target_idx, item)
+                self.hole_idx = target_idx
+                regrid_rows()
+                
+        def on_drag_release(event):
+            if self.floating_drag_win:
+                self.floating_drag_win.destroy()
+                self.floating_drag_win = None
+            
+            if self.hole_idx != -1:
+                # Lưu thứ tự mới
+                new_models = [models[i] for i in self.current_order]
+                self.aim.update_models(new_models)
+                self.build_ai_models_tab()
+
+        def regrid_rows():
+            row_start = 1
+            for pos_idx, logical_idx in enumerate(self.current_order):
+                row_widgets = self.ai_row_widgets[logical_idx]
+                if pos_idx == self.hole_idx:
+                    # Chừa khoảng trống cho Hole (do đã grid_remove)
+                    pass
+                else:
+                    if row_widgets['divider']:
+                        row_widgets['divider'].grid(row=row_start, column=0, columnspan=6, sticky="ew", pady=(0, 5))
+                    row_start += 1
+                    for col, w in enumerate(row_widgets['widgets']):
+                        w.grid(row=row_start, column=col, padx=5, pady=8, sticky="w" if col > 0 else "")
+                row_start += 1
+
+        def delete_model(idx):
+            import tkinter.messagebox as tkmb
+            # Lấy index thực tế đang hiển thị
+            real_idx = self.current_order.index(idx)
+            if tkmb.askyesno("Xác nhận", f"Bạn có chắc chắn muốn xóa model này không?"):
+                m = self.aim.get_models()
+                m.pop(real_idx)
+                self.aim.update_models(m)
+                self.build_ai_models_tab()
+                
+        def edit_model(idx):
+            real_idx = self.current_order.index(idx)
+            self.open_edit_model_dialog(real_idx)
+            
+        row_idx = 1
+        for i, m in enumerate(models):
+            divider = ctk.CTkFrame(self.scrollable_ai_models, height=1, fg_color="#444")
+            divider.grid(row=row_idx, column=0, columnspan=6, sticky="ew", pady=(0, 5))
+            row_idx += 1
+            
+            lbl_stt = ctk.CTkLabel(self.scrollable_ai_models, text=str(i+1))
+            lbl_stt.grid(row=row_idx, column=0, padx=5, pady=8)
+            
+            frame_model = ctk.CTkFrame(self.scrollable_ai_models, fg_color="transparent")
+            frame_model.grid(row=row_idx, column=1, padx=5, pady=8, sticky="w")
+            lbl_name = ctk.CTkLabel(frame_model, text=m['name'], font=ctk.CTkFont(weight="bold"))
+            lbl_name.pack(anchor="w")
+            
+            link = m.get('link', '')
+            if link:
+                lbl_link = ctk.CTkLabel(frame_model, text="Lấy API Key", text_color="#4fc1ff", cursor="hand2", font=ctk.CTkFont(size=10, underline=True))
+                lbl_link.pack(anchor="w")
+                lbl_link.bind("<Button-1>", lambda e, l=link: os.startfile(l))
+            
+            frame_key = ctk.CTkFrame(self.scrollable_ai_models, fg_color="transparent")
+            frame_key.grid(row=row_idx, column=2, padx=5, pady=8, sticky="w")
+            entry_key = ctk.CTkEntry(frame_key, width=200, show="*")
+            entry_key.insert(0, m['api_key'])
+            entry_key.pack(side="left")
+            entry_key.bind("<KeyRelease>", lambda e, idx=i, widget=entry_key: save_key(idx, widget.get()))
+            
+            btn_eye = ctk.CTkButton(frame_key, text="👁", width=30, fg_color="transparent", border_width=1, 
+                                    command=lambda e=entry_key: e.configure(show="" if e.cget("show") == "*" else "*"))
+            btn_eye.pack(side="left", padx=(5,0))
+            
+            lbl_quota = ctk.CTkLabel(self.scrollable_ai_models, text=m.get('quota', '-'))
+            lbl_quota.grid(row=row_idx, column=3, padx=5, pady=8, sticky="w")
+            
+            status_text = m['status']
+            if status_text == "Exhausted":
+                import time
+                wait = max(0, int(m.get('refresh_wait', 60) - (time.time() - m.get('exhausted_time', 0))))
+                status_text = f"Đợi {wait}s"
+                color = "red"
+            elif "Test" in status_text:
+                color = "orange"
+            else:
+                color = "green"
+            lbl_status = ctk.CTkLabel(self.scrollable_ai_models, text=status_text, text_color=color)
+            lbl_status.grid(row=row_idx, column=4, padx=5, pady=8, sticky="w")
+            
+            frame_actions = ctk.CTkFrame(self.scrollable_ai_models, fg_color="transparent")
+            frame_actions.grid(row=row_idx, column=5, padx=5, pady=8, sticky="w")
+            
+            btn_edit = ctk.CTkButton(frame_actions, text="✏️", width=25, height=25, fg_color="transparent", hover_color="#444", command=lambda idx=i: edit_model(idx))
+            btn_edit.pack(side="left", padx=2)
+            
+            btn_del = ctk.CTkButton(frame_actions, text="🗑️", width=25, height=25, fg_color="transparent", hover_color="#6b1a1a", command=lambda idx=i: delete_model(idx))
+            btn_del.pack(side="left", padx=2)
+            
+            lbl_drag = ctk.CTkLabel(frame_actions, text="≡", width=25, height=25, cursor="fleur", text_color="gray", font=ctk.CTkFont(size=18, weight="bold"))
+            lbl_drag.pack(side="left", padx=(5,2))
+            
+            lbl_drag.bind("<Button-1>", lambda e, idx=i: on_drag_start(e, idx))
+            lbl_drag.bind("<B1-Motion>", on_drag_motion)
+            lbl_drag.bind("<ButtonRelease-1>", on_drag_release)
+            
+            self.ai_row_widgets.append({
+                'divider': divider,
+                'widgets': [lbl_stt, frame_model, frame_key, lbl_quota, lbl_status, frame_actions]
+            })
+            
+            row_idx += 1
+            
+        # Thêm thông báo và các nút Add/Save
+        noti = self.aim.get_notifications()
+        if noti:
+            lbl_noti = ctk.CTkLabel(self.scrollable_ai_models, text=f"🔔 Thông báo gần nhất: {noti[-1]['msg']}", text_color="yellow")
+            lbl_noti.grid(row=row_idx, column=0, columnspan=6, pady=15, sticky="w", padx=15)
+            row_idx += 1
+            
+        frame_bottom = ctk.CTkFrame(self.scrollable_ai_models, fg_color="transparent")
+        frame_bottom.grid(row=row_idx, column=0, columnspan=6, pady=15, sticky="ew")
+        
+        btn_add_model = ctk.CTkButton(frame_bottom, text="➕ Thêm Model", command=self.open_add_model_dialog, fg_color="#1f538d")
+        btn_add_model.pack(side="left", padx=15)
+        
+        btn_save_models = ctk.CTkButton(frame_bottom, text="💾 Lưu Cài Đặt", command=self.flash_save_models, fg_color="green")
+        btn_save_models.pack(side="left", padx=15)
+
+    def flash_save_models(self):
+        # Vì dữ liệu đã auto-save, nút này mang tính chất UX
+        for widget in self.scrollable_ai_models.winfo_children():
+            if isinstance(widget, ctk.CTkFrame):
+                for child in widget.winfo_children():
+                    if isinstance(child, ctk.CTkButton) and child.cget("text") == "💾 Lưu Cài Đặt":
+                        child.configure(text="✅ Đã Lưu!", fg_color="#28a745")
+                        self.after(2000, lambda c=child: c.configure(text="💾 Lưu Cài Đặt", fg_color="green"))
+                        break
+
+    def open_edit_model_dialog(self, idx):
+        m = self.aim.get_models()[idx]
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Sửa Model")
+        dialog.geometry("400x500")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(dialog, text="Tên hiển thị:").pack(pady=(10,0), padx=10, anchor="w")
+        entry_name = ctk.CTkEntry(dialog, width=380)
+        entry_name.insert(0, m.get('name', ''))
+        entry_name.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Provider (openai / google):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_provider = ctk.CTkEntry(dialog, width=380)
+        entry_provider.insert(0, m.get('provider', ''))
+        entry_provider.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Model ID (ví dụ: gpt-5):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_model = ctk.CTkEntry(dialog, width=380)
+        entry_model.insert(0, m.get('model', ''))
+        entry_model.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Endpoint (Bỏ trống nếu là google):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_endpoint = ctk.CTkEntry(dialog, width=380)
+        entry_endpoint.insert(0, m.get('endpoint', ''))
+        entry_endpoint.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Link lấy Key (Tùy chọn):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_link = ctk.CTkEntry(dialog, width=380)
+        entry_link.insert(0, m.get('link', ''))
+        entry_link.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Quota hiển thị (Tùy chọn):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_quota = ctk.CTkEntry(dialog, width=380)
+        entry_quota.insert(0, m.get('quota', ''))
+        entry_quota.pack(pady=5, padx=10)
+        
+        def save_edit():
+            name = entry_name.get().strip()
+            if not name: return
+            models = self.aim.get_models()
+            models[idx]["name"] = name
+            models[idx]["provider"] = entry_provider.get().strip()
+            models[idx]["model"] = entry_model.get().strip()
+            models[idx]["endpoint"] = entry_endpoint.get().strip()
+            models[idx]["link"] = entry_link.get().strip()
+            models[idx]["quota"] = entry_quota.get().strip()
+            self.aim.update_models(models)
+            self.build_ai_models_tab()
+            dialog.destroy()
+            
+        ctk.CTkButton(dialog, text="Lưu thay đổi", command=save_edit).pack(pady=20)
+
+    def open_add_model_dialog(self):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Thêm Model Mới")
+        dialog.geometry("400x450")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(dialog, text="Tên hiển thị:").pack(pady=(10,0), padx=10, anchor="w")
+        entry_name = ctk.CTkEntry(dialog, width=380)
+        entry_name.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Provider (openai / google):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_provider = ctk.CTkEntry(dialog, width=380)
+        entry_provider.insert(0, "openai")
+        entry_provider.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Model ID (ví dụ: gpt-5):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_model = ctk.CTkEntry(dialog, width=380)
+        entry_model.pack(pady=5, padx=10)
+        
+        ctk.CTkLabel(dialog, text="Endpoint (Bỏ trống nếu là google):").pack(pady=(10,0), padx=10, anchor="w")
+        entry_endpoint = ctk.CTkEntry(dialog, width=380)
+        entry_endpoint.insert(0, "https://api.openai.com/v1/chat/completions")
+        entry_endpoint.pack(pady=5, padx=10)
+        
+        def save_new():
+            name = entry_name.get().strip()
+            if not name: return
+            new_model = {
+                "name": name,
+                "provider": entry_provider.get().strip(),
+                "model": entry_model.get().strip(),
+                "api_key": "",
+                "endpoint": entry_endpoint.get().strip(),
+                "quota": "Custom",
+                "link": "",
+                "status": "Sẵn sàng",
+                "exhausted_time": 0,
+                "refresh_wait": 0
+            }
+            m = self.aim.get_models()
+            m.append(new_model)
+            self.aim.update_models(m)
+            self.build_ai_models_tab()
+            dialog.destroy()
+            
+        ctk.CTkButton(dialog, text="Thêm", command=save_new).pack(pady=20)
+
+    def get_current_ui_settings(self):
+        try:
+            delay_min = float(self.entry_delay_min.get().strip() or 0)
+            delay_max = float(self.entry_delay_max.get().strip() or 0)
+        except ValueError:
+            delay_min = self.app_settings.get("delay_min", 3.0)
+            delay_max = self.app_settings.get("delay_max", 5.0)
+
+        model_display = self.menu_whisper_model.get().split(" ")[0]
+        device_display = self.menu_whisper_device.get().split(" ")[0]
+
+        return {
+            "delay_min": delay_min,
+            "delay_max": delay_max,
+            "video_quality": self.menu_quality.get(),
+            "subtitle_lang": self.entry_sub_lang.get().strip(),
+            "download_video": self.cb_download_video.get() == 1,
+            "browser": self.menu_browser.get(),
+            "whisper_model": model_display,
+            "whisper_device": device_display,
+            "transcript_mode": self.app_settings.get("transcript_mode", "prefer_subtitle"),
+            "whisper_model_dir": self.app_settings.get("whisper_model_dir", "models/whisper"),
+            "enable_speaker_diarization": self.cb_speaker_diarization.get() == 1
+        }
+
+    def check_settings_changed(self):
+        current = self.get_current_ui_settings()
+        changed = False
+        for k, v in current.items():
+            if self.app_settings.get(k) != v:
+                changed = True
+                break
+                
+        if changed:
+            self.btn_save_settings.configure(state="normal")
+        else:
+            self.btn_save_settings.configure(state="disabled")
+            
+        self.after(500, self.check_settings_changed)
+
     def save_app_settings(self):
         try:
             delay_min = float(self.entry_delay_min.get().strip())
@@ -1230,9 +1621,7 @@ class App(ctk.CTk):
                 "whisper_model_dir": self.app_settings.get("whisper_model_dir", "models/whisper"),
                 
                 # Speaker Diarization
-                "enable_speaker_diarization": self.cb_speaker_diarization.get() == 1,
-                "gemini_api_key": self.entry_gemini_key.get().strip(),
-                "gemini_model": self.menu_gemini_model.get()
+                "enable_speaker_diarization": self.cb_speaker_diarization.get() == 1
             }
 
             settings.save_settings(new_settings)

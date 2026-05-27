@@ -151,11 +151,22 @@ def convert_vtt_to_txt(vtt_file_path, txt_dir):
                     'text': "\n".join(block_output)
                 })
 
-        # Ghi file TXT
+        # Ghi file TXT (gốc timeline)
         with open(txt_file_path, 'w', encoding='utf-8') as f_txt:
             for b in clean_blocks:
                 f_txt.write(f"{b['start_txt']} --> {b['end_txt']}\n")
                 f_txt.write(b['text'] + "\n\n")
+
+        # Ghi file TXT_clean (văn bản sạch liền mạch, không timestamp)
+        clean_txt_name = (base_name[:-4] if base_name.endswith('.vtt') else base_name) + '_clean.txt'
+        clean_txt_file_path = os.path.join(txt_dir, clean_txt_name)
+        text_list = []
+        for b in clean_blocks:
+            text_list.append(b['text'].replace('\n', ' ').strip())
+        clean_text_content = " ".join(text_list)
+        clean_text_content = re.sub(r'\s+', ' ', clean_text_content).strip()
+        with open(clean_txt_file_path, 'w', encoding='utf-8') as f_clean:
+            f_clean.write(clean_text_content)
 
         # Ghi đè VTT gốc (dạng sạch, dùng cho Premiere/trình phát)
         with open(vtt_file_path, 'w', encoding='utf-8') as f_vtt:
@@ -422,6 +433,15 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
                     f.write(f"{start_ts} --> {end_ts}\n")
                     f.write(f"{text}\n\n")
 
+        # Ghi file sạch liền mạch không timestamp
+        clean_txt_filename = f"{video_basename}_whisper_transcript_clean.txt"
+        clean_txt_path = os.path.join(output_txt_dir, clean_txt_filename)
+        text_list = [seg['text'].strip() for seg in segments if seg.get('text')]
+        clean_text_content = " ".join(text_list)
+        clean_text_content = re.sub(r'\s+', ' ', clean_text_content).strip()
+        with open(clean_txt_path, 'w', encoding='utf-8') as f_clean:
+            f_clean.write(clean_text_content)
+
         if log_callback:
             log_callback(f"[Whisper] ✅ Hoàn thành! Ngôn ngữ: {detected_lang.upper()} | {len(segments)} đoạn | Lưu tại: {txt_filename}")
 
@@ -568,6 +588,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                             has_subs = bool(entry.get('subtitles') or entry.get('automatic_captions'))
                             detected_lang = entry.get('language') or info.get('language') or guess_language_from_title(title)
 
+                            duration = entry.get('duration') or info.get('duration')
                             results.append({
                                 'url': v_url, 
                                 'title': title, 
@@ -575,7 +596,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 'id': v_id, 
                                 'platform': platform,
                                 'language': detected_lang,
-
+                                'duration': duration,
                                 'has_subtitles': has_subs,
                                 'is_local': False
                             })
@@ -593,6 +614,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 if len(title) > 80:
                                     title = title[:77] + "..."
 
+                            duration = info.get('duration') if info else None
                             results.append({
                                 'url': url, 
                                 'title': title, 
@@ -600,7 +622,8 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 'id': v_id, 
                                 'platform': platform,
                                 'language': guess_language_from_title(title),
-                                'has_subtitles': False,
+                                'duration': duration,
+                                'has_subtitles': has_subs,
                                 'is_local': False
                             })
 
@@ -676,8 +699,24 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
     for d in [videos_dir, vtt_dir, txt_dir, txt_speaker_dir]:
         os.makedirs(d, exist_ok=True)
 
-    platform = detect_platform(url)
+    platform = task.get('platform') or detect_platform(url)
     is_youtube = platform in ["youtube", "youtube_shorts"]
+
+    # Nhận diện Video ngắn tự động
+    duration = task.get('duration')
+    url_lower = url.lower()
+    is_fb_short = "facebook.com/reels" in url_lower or "facebook.com/stories" in url_lower or "fb.com/reels" in url_lower or "fb.com/stories" in url_lower
+    
+    is_short = False
+    if platform in ["youtube_shorts", "tiktok", "instagram"] or is_fb_short:
+        is_short = True
+    elif duration is not None and duration < 180:
+        is_short = True
+
+    if is_short and enable_speaker_diarization:
+        if log_callback:
+            log_callback(f"⚡ [VIDEO NGẮN] Tự động tối ưu: Bỏ qua Speaker Diarization để bảo toàn hạn ngạch API và tăng tốc.")
+        enable_speaker_diarization = False
 
     download_size = 0
 
@@ -747,8 +786,11 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
             'subtitle': os.path.join(vtt_dir, '%(id)s_%(title)s_%(upload_date)s.%(ext)s')
         }
 
+    # Chế độ dịch Whisper không lưu video
+    is_whisper_only = use_whisper and not download_video
+
     ydl_opts = {
-        'skip_download': not download_video,
+        'skip_download': not download_video if not is_whisper_only else False,
         'outtmpl': outtmpl_dict,
         'noplaylist': True,
         'js_runtimes': {'node': {}},
@@ -781,7 +823,11 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
         ydl_opts['cookiesfrombrowser'] = (browser.lower(), )
 
     # Chất lượng video
-    if download_video:
+    if is_whisper_only:
+        ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
+        if log_callback:
+            log_callback(f"[{platform.upper()}] 🎙️ Transcript: Whisper AI ({whisper_model}) (Chỉ tải luồng âm thanh siêu nhẹ) | URL: {url[:60]}...")
+    elif download_video:
         quality_map = {
             '4K':     'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best',
             '1080p':  'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best',
@@ -796,115 +842,130 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
             mode_label = "Subtitle YouTube" if use_subtitle else f"Whisper AI ({whisper_model})"
             log_callback(f"[{platform.upper()}] {mode_icon} Transcript: {mode_label} | URL: {url[:60]}...")
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
 
-                # Kiểm tra tải thất bại (link hết hạn, private, cần login...)
-                if not info_dict:
-                    if log_callback:
-                        log_callback(f"❌ Không thể tải: {url}\n   → Kiểm tra lại link hoặc cấu hình Cookies đăng nhập trong tab ⚙️ Cài đặt.")
-                    return False, 0
-
-                # Ước lượng dung lượng
-                download_size = (
-                    info_dict.get('filesize') or
-                    info_dict.get('filesize_approx') or
-                    50 * 1024 * 1024
-                )
-
-            # --- Xử lý sau khi tải ---
-            if use_subtitle:
-                # YouTube: Làm sạch VTT → TXT
+            # Kiểm tra tải thất bại (link hết hạn, private, cần login...)
+            if not info_dict:
                 if log_callback:
-                    log_callback("📝 Đang chuẩn hóa phụ đề VTT → TXT...")
-                vtt_files = list(set(
-                    glob.glob(os.path.join(vtt_dir, f"*.{lang}.vtt")) +
-                    glob.glob(os.path.join(vtt_dir, f"*{lang}.vtt"))
-                ))
-                converted_any = any(convert_vtt_to_txt(vf, txt_dir) for vf in vtt_files)
-                if not converted_any and log_callback:
-                    log_callback("⚠️ Không tìm thấy file phụ đề VTT. Video có thể không có subtitle.")
-                elif log_callback:
-                    log_callback("✅ Chuẩn hóa phụ đề hoàn thành!")
+                    log_callback(f"❌ Không thể tải: {url}\n   → Kiểm tra lại link hoặc cấu hình Cookies đăng nhập trong tab ⚙️ Cài đặt.")
+                return False, 0
 
-            if use_whisper and download_video:
-                # Tìm file video mới nhất vừa tải về
-                files_after_download = set(os.listdir(videos_dir))
-                new_files = files_after_download - files_before_download
-                video_path = None
+            # Ước lượng dung lượng
+            download_size = (
+                info_dict.get('filesize') or
+                info_dict.get('filesize_approx') or
+                50 * 1024 * 1024
+            )
 
-                # Ưu tiên file từ hook, fallback sang scan thư mục
-                if downloaded_video_file[0] and os.path.exists(downloaded_video_file[0]):
-                    video_path = downloaded_video_file[0]
-                else:
-                    for fname in sorted(new_files):
-                        if fname.lower().endswith(('.mp4', '.mkv', '.webm', '.mov', '.avi')):
-                            video_path = os.path.join(videos_dir, fname)
-                            break
-
-                if video_path:
-                    if log_callback:
-                        log_callback(f"🎙️ Bắt đầu phân tích Whisper cho video tải về...")
-                    transcribe_with_whisper(
-                        video_path=video_path,
-                        output_txt_dir=txt_dir,
-                        model_name=whisper_model,
-                        model_dir=whisper_model_dir,
-                        device=whisper_device,
-                        log_callback=log_callback,
-                        whisper_progress_callback=lambda p, s: whisper_progress_callback(url, p, s) if whisper_progress_callback else None,
-                        cancel_event=cancel_event
-                    )
-                elif log_callback:
-                    log_callback("⚠️ Không tìm thấy file video để chạy Whisper. Hãy bật 'Tải Video' trong cài đặt.")
-
-            # --- Chạy Nhận diện Người Nói (Speaker Diarization) HOẶC Dịch Thuật ---
-            is_auto_lang = not lang or lang in ["Auto-detect (Tự động)", "Tự động", "auto", ""] or lang.startswith("Auto-detect")
-            need_translation = not is_auto_lang
-            need_gemini = enable_speaker_diarization or need_translation
-            
-            if need_gemini:
-                txt_files = glob.glob(os.path.join(txt_dir, "*.txt"))
-                for txt_file in txt_files:
-                    basename = os.path.basename(txt_file)
-                    output_txt_path = os.path.join(txt_speaker_dir, basename)
-                    
-                    # Callback trung gian để truyền url về GUI
-                    def d_prog(percent):
-                        if diarization_progress_callback:
-                            diarization_progress_callback(url, percent)
-                            
-                    speaker_diarization.process_transcript(
-                        input_txt_path=txt_file,
-                        output_txt_path=output_txt_path,
-                        log_callback=log_callback,
-                        progress_callback=d_prog,
-                        target_lang=lang if need_translation else None,
-                        diarize=enable_speaker_diarization
-                    )
-                    
+        # --- Xử lý sau khi tải ---
+        if use_subtitle:
+            # YouTube: Làm sạch VTT → TXT
             if log_callback:
-                log_callback(f"✅ Hoàn thành xử lý: {url}")
+                log_callback("📝 Đang chuẩn hóa phụ đề VTT → TXT...")
+            vtt_files = list(set(
+                glob.glob(os.path.join(vtt_dir, f"*.{lang}.vtt")) +
+                glob.glob(os.path.join(vtt_dir, f"*{lang}.vtt"))
+            ))
+            converted_any = any(convert_vtt_to_txt(vf, txt_dir) for vf in vtt_files)
+            if not converted_any and log_callback:
+                log_callback("⚠️ Không tìm thấy file phụ đề VTT. Video có thể không có subtitle.")
+            elif log_callback:
+                log_callback("✅ Chuẩn hóa phụ đề hoàn thành!")
 
-            return True, download_size
+        if use_whisper:
+            # Tìm file video/audio mới nhất vừa tải về
+            files_after_download = set(os.listdir(videos_dir))
+            new_files = files_after_download - files_before_download
+            video_path = None
 
-        except Exception as e:
-            err_msg = str(e)
-            if log_callback:
-                if "cookie" in err_msg.lower():
-                    log_callback(
-                        f"❌ LỖI COOKIES KHI TẢI URL: {url}\n"
-                        f"   Chi tiết: {err_msg}\n"
-                        f"   👉 NGUYÊN NHÂN: Trình duyệt '{browser}' có thể đang mở và khóa tệp cookie.\n"
-                        f"   👉 CÁCH KHẮC PHỤC:\n"
-                        f"      1. Tắt HOÀN TOÀN trình duyệt '{browser}' (đảm bảo không còn chạy ngầm trong Task Manager) rồi tải lại.\n"
-                        f"      2. Hoặc vào tab '⚙️ Cài đặt' -> Chọn 'Không dùng' ở mục 'Đọc Cookies từ trình duyệt' (nếu không cần tải video riêng tư/giới hạn).\n"
-                        f"      3. Hoặc xuất tệp 'cookies.txt' từ trình duyệt bằng tiện ích mở rộng (như 'Get cookies.txt LOCALLY') rồi lưu vào thư mục phần mềm."
-                    )
-                else:
-                    log_callback(f"❌ Lỗi khi xử lý {url}: {err_msg}")
-            return False, 0
+            # Ưu tiên file từ hook, fallback sang scan thư mục
+            if downloaded_video_file[0] and os.path.exists(downloaded_video_file[0]):
+                video_path = downloaded_video_file[0]
+            else:
+                for fname in sorted(new_files):
+                    if fname.lower().endswith(('.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4a', '.mp3', '.ogg', '.wav')):
+                        video_path = os.path.join(videos_dir, fname)
+                        break
+
+            if video_path:
+                if log_callback:
+                    msg = "🎙️ Bắt đầu phân tích Whisper cho âm thanh tạm thời..." if not download_video else "🎙️ Bắt đầu phân tích Whisper cho video tải về..."
+                    log_callback(msg)
+                
+                transcribe_with_whisper(
+                    video_path=video_path,
+                    output_txt_dir=txt_dir,
+                    model_name=whisper_model,
+                    model_dir=whisper_model_dir,
+                    device=whisper_device,
+                    log_callback=log_callback,
+                    whisper_progress_callback=lambda p, s: whisper_progress_callback(url, p, s) if whisper_progress_callback else None,
+                    cancel_event=cancel_event
+                )
+                
+                # Nếu người dùng chọn KHÔNG tải video (chỉ lấy transcript), ta xóa file audio/video tạm đi
+                if not download_video:
+                    try:
+                        if os.path.exists(video_path):
+                            os.remove(video_path)
+                            if log_callback:
+                                log_callback(f"🧹 Đã dọn dẹp tệp âm thanh tạm thời: {os.path.basename(video_path)}")
+                    except Exception as e:
+                        if log_callback:
+                            log_callback(f"⚠️ Không thể xóa tệp tạm thời: {e}")
+            elif log_callback:
+                log_callback("⚠️ Không tìm thấy file âm thanh/video để chạy Whisper.")
+
+        # --- Chạy Nhận diện Người Nói (Speaker Diarization) HOẶC Dịch Thuật ---
+        is_auto_lang = not lang or lang in ["Auto-detect (Tự động)", "Tự động", "auto", ""] or lang.startswith("Auto-detect")
+        need_translation = not is_auto_lang
+        need_gemini = enable_speaker_diarization or need_translation
+        
+        if need_gemini:
+            txt_files = glob.glob(os.path.join(txt_dir, "*.txt"))
+            for txt_file in txt_files:
+                if txt_file.endswith("_clean.txt"):
+                    continue
+                basename = os.path.basename(txt_file)
+                output_txt_path = os.path.join(txt_speaker_dir, basename)
+                
+                # Callback trung gian để truyền url về GUI
+                def d_prog(percent):
+                    if diarization_progress_callback:
+                        diarization_progress_callback(url, percent)
+                        
+                speaker_diarization.process_transcript(
+                    input_txt_path=txt_file,
+                    output_txt_path=output_txt_path,
+                    log_callback=log_callback,
+                    progress_callback=d_prog,
+                    target_lang=lang if need_translation else None,
+                    diarize=enable_speaker_diarization
+                )
+                
+        if log_callback:
+            log_callback(f"✅ Hoàn thành xử lý: {url}")
+
+        return True, download_size
+
+    except Exception as e:
+        err_msg = str(e)
+        if log_callback:
+            if "cookie" in err_msg.lower():
+                log_callback(
+                    f"❌ LỖI COOKIES KHI TẢI URL: {url}\n"
+                    f"   Chi tiết: {err_msg}\n"
+                    f"   👉 NGUYÊN NHÂN: Trình duyệt '{browser}' có thể đang mở và khóa tệp cookie.\n"
+                    f"   👉 CÁCH KHẮC PHỤC:\n"
+                    f"      1. Tắt HOÀN TOÀN trình duyệt '{browser}' (đảm bảo không còn chạy ngầm trong Task Manager) rồi tải lại.\n"
+                    f"      2. Hoặc vào tab '⚙️ Cài đặt' -> Chọn 'Không dùng' ở mục 'Đọc Cookies từ trình duyệt' (nếu không cần tải video riêng tư/giới hạn).\n"
+                    f"      3. Hoặc xuất tệp 'cookies.txt' từ trình duyệt bằng tiện ích mở rộng (như 'Get cookies.txt LOCALLY') rồi lưu vào thư mục phần mềm."
+                )
+            else:
+                log_callback(f"❌ Lỗi khi xử lý {url}: {err_msg}")
+        return False, 0
 
 # ---------------------------------------------------------------------------
 # Orchestrator: Xử lý nhiều URL tuần tự với anti-bot countdown

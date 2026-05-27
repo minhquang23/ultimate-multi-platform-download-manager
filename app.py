@@ -84,6 +84,7 @@ class App(ctk.CTk):
         # Load cấu hình
         self.app_settings = settings.load_settings()
         self.cancel_event = threading.Event()
+        self.last_session_dir = None
         
         # Cấu hình Layout chính (Grid)
         self.grid_columnconfigure(0, weight=1)
@@ -164,6 +165,33 @@ class App(ctk.CTk):
         )
         self.btn_select_file.grid(row=0, column=1, padx=10, pady=8, sticky="w")
 
+        # Dropdown Chế độ tải xuống trực tiếp tại Tab Tải về
+        self.menu_download_mode = ctk.CTkOptionMenu(
+            self.frame_controls, 
+            values=["🎬 Tải Video + Transcript/Phụ đề", "📝 Chỉ tải Transcript/Phụ đề (Không lưu Video)"],
+            width=280
+        )
+        self.menu_download_mode.grid(row=0, column=2, padx=10, pady=8, sticky="w")
+        if self.app_settings.get("download_video", True):
+            self.menu_download_mode.set("🎬 Tải Video + Transcript/Phụ đề")
+        else:
+            self.menu_download_mode.set("📝 Chỉ tải Transcript/Phụ đề (Không lưu Video)")
+        ToolTip(self.menu_download_mode, text="Chọn chế độ: Tải kèm tệp video hoặc chỉ lấy transcript phụ đề tối ưu.")
+
+        # Nút Mở thư mục kết quả phiên tải gần nhất (Chỉ Icon hình vuông)
+        self.btn_open_folder = ctk.CTkButton(
+            self.frame_controls, 
+            text="📂", 
+            width=40,
+            command=self.open_last_session, 
+            fg_color="#34495e", 
+            hover_color="#2c3e50", 
+            font=ctk.CTkFont(weight="bold", size=15),
+            state="disabled"
+        )
+        self.btn_open_folder.grid(row=0, column=3, padx=10, pady=8, sticky="w")
+        ToolTip(self.btn_open_folder, text="Mở thư mục kết quả của phiên tải gần nhất")
+
         self.btn_clear = ctk.CTkButton(
             self.frame_controls, 
             text="🧹 Dọn dẹp URL", 
@@ -172,7 +200,8 @@ class App(ctk.CTk):
             hover_color="#495057", 
             width=110
         )
-        self.btn_clear.grid(row=0, column=3, padx=10, pady=8, sticky="e")
+        self.btn_clear.grid(row=0, column=4, padx=10, pady=8, sticky="e")
+        self.frame_controls.grid_columnconfigure(4, weight=1)
 
         # 3. Danh sách check chọn video (Scrollable)
         self.scrollable_frame = ctk.CTkScrollableFrame(self.tab_download, label_text="Danh sách Video", label_font=ctk.CTkFont(weight="bold"))
@@ -514,7 +543,9 @@ class App(ctk.CTk):
                 'lbl_lang_val': lbl_lang_val,
                 'var_whisper': var_whisper,
                 'title': title,
-                'is_local': item.get('is_local', False)
+                'is_local': item.get('is_local', False),
+                'platform': platform,
+                'duration': item.get('duration')
             }
             
         self.reset_buttons()
@@ -646,6 +677,8 @@ class App(ctk.CTk):
         # Tạo Session Directory
         now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         session_dir = os.path.join("downloads", f"Session_{now}")
+        self.last_session_dir = session_dir
+        self.btn_open_folder.configure(state="disabled", fg_color="#34495e", hover_color="#2c3e50")
 
         # Dọn dẹp logs cũ
         self.textbox_logs.configure(state="normal")
@@ -669,7 +702,9 @@ class App(ctk.CTk):
                 'use_sub': use_sub,
                 'use_whisper': use_whisper,
                 'is_local': is_local,
-                'lang': lang_code
+                'lang': lang_code,
+                'platform': row.get('platform', 'generic'),
+                'duration': row.get('duration')
             })
 
         # Khởi chạy luồng tải ngầm để tránh đơ giao diện
@@ -680,7 +715,10 @@ class App(ctk.CTk):
     def run_download_task(self, tasks, session_dir):
         # Đọc cấu hình mới nhất từ Tab Cài đặt để chạy tải
         lang = self.app_settings.get("subtitle_lang", "vi")
-        download_video = self.app_settings.get("download_video", True)
+        download_video = "🎬" in self.menu_download_mode.get()
+        # Đồng bộ lưu lại thiết lập download_video
+        self.app_settings["download_video"] = download_video
+        settings.save_settings(self.app_settings)
         browser = self.app_settings.get("browser", "chrome")
         video_quality = self.app_settings.get("video_quality", "1080p")
         delay_min = float(self.app_settings.get("delay_min", 3.0))
@@ -749,6 +787,10 @@ class App(ctk.CTk):
         self.textbox_urls.configure(state="normal")
         self.btn_start.configure(state="normal", text="🚀 Bắt đầu Xử lý", fg_color="#1f538d", hover_color="#14375e")
         
+        # Sáng xanh nút 📂 khi phiên tải hoàn tất
+        if self.last_session_dir and os.path.exists(self.last_session_dir):
+            self.btn_open_folder.configure(state="normal", fg_color="#2ca02c", hover_color="#218c21")
+        
         if hasattr(self, 'cb_all'): self.cb_all.configure(state="normal")
         if hasattr(self, 'cb_all_sub'): self.cb_all_sub.configure(state="normal")
         if hasattr(self, 'cb_all_whisper'): self.cb_all_whisper.configure(state="normal")
@@ -792,14 +834,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(self.settings_scroll, text="📥 DOWNLOAD VIDEO & SUBTITLE", font=ctk.CTkFont(weight="bold", size=13)).grid(
             row=row, column=0, columnspan=2, padx=15, pady=(5, 8), sticky="w"); row += 1
 
-        ctk.CTkLabel(self.settings_scroll, text="Tải kèm file Video:").grid(row=row, column=0, padx=15, pady=4, sticky="w")
-        self.cb_download_video = ctk.CTkCheckBox(self.settings_scroll, text="Đồng ý tải Video")
-        self.cb_download_video.grid(row=row, column=1, padx=15, pady=4, sticky="w")
-        if self.app_settings.get("download_video", True):
-            self.cb_download_video.select()
-        else:
-            self.cb_download_video.deselect()
-        row += 1
+        # (Download video checkbox đã chuyển sang dropdown ở tab Tải về)
 
         ctk.CTkLabel(self.settings_scroll, text="Chất lượng Video tối đa:").grid(row=row, column=0, padx=15, pady=4, sticky="w")
         self.menu_quality = ctk.CTkOptionMenu(self.settings_scroll, values=["4K", "1080p", "720p", "480p", "Tốt nhất"])
@@ -1630,7 +1665,7 @@ class App(ctk.CTk):
             "delay_max": delay_max,
             "video_quality": self.menu_quality.get(),
             "subtitle_lang": self.entry_sub_lang.get().strip(),
-            "download_video": self.cb_download_video.get() == 1,
+            "download_video": "🎬" in self.menu_download_mode.get(),
             "browser": self.menu_browser.get(),
             "whisper_model": model_display,
             "whisper_device": device_display,
@@ -1673,7 +1708,7 @@ class App(ctk.CTk):
                 "delay_max": delay_max,
                 "video_quality": self.menu_quality.get(),
                 "subtitle_lang": self.entry_sub_lang.get().strip(),
-                "download_video": self.cb_download_video.get() == 1,
+                "download_video": "🎬" in self.menu_download_mode.get(),
                 "browser": self.menu_browser.get(),
                 # Whisper settings
                 "whisper_model": model_display,
@@ -1783,6 +1818,11 @@ class App(ctk.CTk):
                 self.log_message(f"Lỗi: Không thể mở thư mục: {e}")
         else:
             self.log_message(f"Thư mục lưu trữ không còn tồn tại trên máy tính: {folder_path}")
+
+    def open_last_session(self):
+        """Mở nhanh thư mục kết quả của phiên tải gần nhất."""
+        if self.last_session_dir:
+            self.open_session_folder(self.last_session_dir)
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("Dark")

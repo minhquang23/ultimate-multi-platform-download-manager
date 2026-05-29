@@ -1,3 +1,10 @@
+import sys
+
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 import tkinter as tk
 from tkinter import filedialog, Toplevel, Label
 import customtkinter as ctk

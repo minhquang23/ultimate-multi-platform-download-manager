@@ -1,4 +1,11 @@
 import os
+import sys
+
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 import glob
 import webvtt
 import yt_dlp
@@ -623,7 +630,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                                 'platform': platform,
                                 'language': guess_language_from_title(title),
                                 'duration': duration,
-                                'has_subtitles': has_subs,
+                                'has_subtitles': bool(info.get('subtitles') or info.get('automatic_captions')) if info else False,
                                 'is_local': False
                             })
 
@@ -782,14 +789,15 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
 
         # --- Cấu hình yt-dlp ---
         outtmpl_dict = {
-            'default': os.path.join(videos_dir, '%(id)s_%(title)s_%(upload_date)s.%(ext)s'),
-            'subtitle': os.path.join(vtt_dir, '%(id)s_%(title)s_%(upload_date)s.%(ext)s')
+            'default': os.path.join(videos_dir, '%(id)s_%(title.40)s.%(ext)s'),
+            'subtitle': os.path.join(vtt_dir, '%(id)s_%(title.40)s.%(ext)s')
         }
 
     # Chế độ dịch Whisper không lưu video
     is_whisper_only = use_whisper and not download_video
 
     ydl_opts = {
+        'trim_file_name': 100,
         'skip_download': not download_video if not is_whisper_only else False,
         'outtmpl': outtmpl_dict,
         'noplaylist': True,

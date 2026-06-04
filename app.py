@@ -119,7 +119,7 @@ class App(ctk.CTk):
         self.tab_download.grid_columnconfigure(0, weight=1)
         self.tab_download.grid_rowconfigure(1, weight=0) # Ô URL co giãn
         self.tab_download.grid_rowconfigure(3, weight=1) # Danh sách video co giãn tối đa
-        self.tab_download.grid_rowconfigure(5, weight=0) # Ô Logs
+        self.tab_download.grid_rowconfigure(6, weight=0) # Ô Logs
 
         # 1. Nhãn & Hộp nhập URL
         self.label_urls = ctk.CTkLabel(self.tab_download, text="Nhập các URL (YouTube, Shorts, TikTok, Facebook, Vimeo), mỗi dòng 1 URL:", font=ctk.CTkFont(weight="bold"))
@@ -172,18 +172,6 @@ class App(ctk.CTk):
         )
         self.btn_select_file.grid(row=0, column=1, padx=10, pady=8, sticky="w")
 
-        # Dropdown Chế độ tải xuống trực tiếp tại Tab Tải về
-        self.menu_download_mode = ctk.CTkOptionMenu(
-            self.frame_controls, 
-            values=["🎬 Tải Video + Transcript/Phụ đề", "📝 Chỉ tải Transcript/Phụ đề (Không lưu Video)"],
-            width=280
-        )
-        self.menu_download_mode.grid(row=0, column=2, padx=10, pady=8, sticky="w")
-        if self.app_settings.get("download_video", True):
-            self.menu_download_mode.set("🎬 Tải Video + Transcript/Phụ đề")
-        else:
-            self.menu_download_mode.set("📝 Chỉ tải Transcript/Phụ đề (Không lưu Video)")
-        ToolTip(self.menu_download_mode, text="Chọn chế độ: Tải kèm tệp video hoặc chỉ lấy transcript phụ đề tối ưu.")
 
         # Nút Mở thư mục kết quả phiên tải gần nhất (Chỉ Icon hình vuông)
         self.btn_open_folder = ctk.CTkButton(
@@ -196,7 +184,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(weight="bold", size=15),
             state="disabled"
         )
-        self.btn_open_folder.grid(row=0, column=3, padx=10, pady=8, sticky="w")
+        self.btn_open_folder.grid(row=0, column=2, padx=10, pady=8, sticky="w")
         ToolTip(self.btn_open_folder, text="Mở thư mục kết quả của phiên tải gần nhất")
 
         self.btn_clear = ctk.CTkButton(
@@ -207,8 +195,8 @@ class App(ctk.CTk):
             hover_color="#495057", 
             width=110
         )
-        self.btn_clear.grid(row=0, column=4, padx=10, pady=8, sticky="e")
-        self.frame_controls.grid_columnconfigure(4, weight=1)
+        self.btn_clear.grid(row=0, column=3, padx=10, pady=8, sticky="e")
+        self.frame_controls.grid_columnconfigure(3, weight=1)
 
         # 3. Danh sách check chọn video (Scrollable)
         self.scrollable_frame = ctk.CTkScrollableFrame(self.tab_download, label_text="Danh sách Video", label_font=ctk.CTkFont(weight="bold"))
@@ -216,9 +204,28 @@ class App(ctk.CTk):
         self.video_rows = {} # Lưu map: url -> {widgets}
         self.check_all_var = ctk.StringVar(value="off")
 
-        # 4. Logs Console
+        # 4. Tùy chọn tải (Global Options)
+        self.frame_download_options = ctk.CTkFrame(self.tab_download)
+        self.frame_download_options.grid(row=4, column=0, padx=15, pady=(0, 5), sticky="ew")
+        
+        lbl_options = ctk.CTkLabel(self.frame_download_options, text="Tùy chọn tải:", font=ctk.CTkFont(weight="bold"))
+        lbl_options.pack(side="left", padx=10, pady=10)
+        
+        self.check_global_video_var = ctk.IntVar(value=1 if self.app_settings.get("download_video", True) else 0)
+        self.cb_global_video = ctk.CTkCheckBox(self.frame_download_options, text="🎬 Tải Tệp Video", variable=self.check_global_video_var)
+        self.cb_global_video.pack(side="left", padx=15)
+        
+        self.check_global_sub_var = ctk.IntVar(value=1 if self.app_settings.get("use_global_sub", True) else 0)
+        self.cb_global_sub = ctk.CTkCheckBox(self.frame_download_options, text="📝 Lấy Phụ đề gốc (Nếu có)", variable=self.check_global_sub_var)
+        self.cb_global_sub.pack(side="left", padx=15)
+        
+        self.check_global_whisper_var = ctk.IntVar(value=1 if self.app_settings.get("use_global_whisper", True) else 0)
+        self.cb_global_whisper = ctk.CTkCheckBox(self.frame_download_options, text="🎙️ Dùng Whisper (AI Dịch)", variable=self.check_global_whisper_var)
+        self.cb_global_whisper.pack(side="left", padx=15)
+
+        # 5. Logs Console
         self.frame_logs_header = ctk.CTkFrame(self.tab_download, fg_color="transparent")
-        self.frame_logs_header.grid(row=4, column=0, padx=15, pady=(10, 2), sticky="ew")
+        self.frame_logs_header.grid(row=5, column=0, padx=15, pady=(10, 2), sticky="ew")
         self.frame_logs_header.grid_columnconfigure(1, weight=1) # Spacer giữa nhãn và nút
 
         self.label_logs = ctk.CTkLabel(self.frame_logs_header, text="Tiến trình hệ thống (Logs):", font=ctk.CTkFont(weight="bold"))
@@ -237,7 +244,7 @@ class App(ctk.CTk):
         self.btn_copy_logs.grid(row=0, column=2, sticky="e")
         
         self.textbox_logs = ctk.CTkTextbox(self.tab_download, height=130, state="disabled")
-        self.textbox_logs.grid(row=5, column=0, padx=15, pady=(0, 15), sticky="nsew")
+        self.textbox_logs.grid(row=6, column=0, padx=15, pady=(0, 15), sticky="nsew")
 
     def log_message(self, message):
         """Hàm ghi log an toàn vào console."""
@@ -403,9 +410,7 @@ class App(ctk.CTk):
         header_frame.pack(fill="x", expand=True, padx=5, pady=(5, 10))
         header_frame.grid_columnconfigure(0, weight=1)
         header_frame.grid_columnconfigure(1, weight=0, minsize=120)
-        header_frame.grid_columnconfigure(2, weight=0, minsize=80)
-        header_frame.grid_columnconfigure(3, weight=0, minsize=80)
-        header_frame.grid_columnconfigure(4, weight=0, minsize=110)
+        header_frame.grid_columnconfigure(2, weight=0, minsize=110)
         
         header_title_frame = ctk.CTkFrame(header_frame, fg_color="transparent", width=330, height=28)
         header_title_frame.pack_propagate(False)
@@ -426,18 +431,10 @@ class App(ctk.CTk):
         lbl_lang = ctk.CTkLabel(header_frame, text="Ngôn ngữ", text_color="#aaa", width=120, anchor="center")
         lbl_lang.grid(row=0, column=1, padx=(5,5), sticky="w")
         
-        self.check_all_sub_var = ctk.StringVar(value="on")
-        self.cb_all_sub = ctk.CTkCheckBox(header_frame, text="📝 Tất cả", variable=self.check_all_sub_var, command=self.toggle_all_sub)
-        self.cb_all_sub.grid(row=0, column=2, padx=(5,5), sticky="w")
-        
-        self.check_all_whisper_var = ctk.StringVar(value="on")
-        self.cb_all_whisper = ctk.CTkCheckBox(header_frame, text="🎙️ Tất cả", variable=self.check_all_whisper_var, command=self.toggle_all_whisper)
-        self.cb_all_whisper.grid(row=0, column=3, padx=(5,5), sticky="w")
-        
         # Dummy status frame để cân bằng base width với các row_frame bên dưới
         dummy_status = ctk.CTkFrame(header_frame, fg_color="transparent", width=110, height=28)
         dummy_status.pack_propagate(False)
-        dummy_status.grid(row=0, column=4, padx=10, pady=2, sticky="e")
+        dummy_status.grid(row=0, column=2, padx=10, pady=2, sticky="e")
         
         # Helper: Marquee event handlers
         def start_marquee(event, widget, full_text):
@@ -469,9 +466,7 @@ class App(ctk.CTk):
             row_frame.pack(fill="x", expand=True, padx=5, pady=4)
             row_frame.grid_columnconfigure(0, weight=1) # Title chiếm 1/3
             row_frame.grid_columnconfigure(1, weight=0, minsize=120) # Dropdown sub lang
-            row_frame.grid_columnconfigure(2, weight=0, minsize=80) # Checkbox sub
-            row_frame.grid_columnconfigure(3, weight=0, minsize=80) # Checkbox whisper
-            row_frame.grid_columnconfigure(4, weight=0, minsize=110) # Status label
+            row_frame.grid_columnconfigure(2, weight=0, minsize=110) # Status label
 
             # Icon tương ứng với từng Platform
             platform_icons = {
@@ -515,22 +510,10 @@ class App(ctk.CTk):
             lbl_lang_val = ctk.CTkLabel(row_frame, text=default_lang_display, text_color="#2b7a78", width=120, anchor="w")
             lbl_lang_val.grid(row=0, column=1, padx=(5,5), pady=2, sticky="w")
             
-            # Checkbox Subtitle 📝 (chuyển sang Cột 2)
-            var_sub = ctk.IntVar(value=1 if item.get('has_subtitles', False) else 0)
-            cb_sub = ctk.CTkCheckBox(row_frame, text="📝", variable=var_sub)
-            cb_sub.grid(row=0, column=2, padx=(5,5), pady=2, sticky="w")
-            ToolTip(cb_sub, text="Tải Phụ đề (Subtitle)")
-                
-            # Checkbox Whisper 🎙️ (Cột 3)
-            var_whisper = ctk.IntVar(value=1)
-            cb_whisper = ctk.CTkCheckBox(row_frame, text="🎙️", variable=var_whisper)
-            cb_whisper.grid(row=0, column=3, padx=(5,5), pady=2, sticky="w")
-            ToolTip(cb_whisper, text="Nhận diện giọng nói (Whisper/Gemini)")
-
             # Status label
             status_container = ctk.CTkFrame(row_frame, fg_color="transparent", width=180, height=28)
             status_container.pack_propagate(False)
-            status_container.grid(row=0, column=4, padx=10, pady=2, sticky="e")
+            status_container.grid(row=0, column=2, padx=10, pady=2, sticky="e")
             
             if not item.get('has_subtitles', False) and not item.get('is_local', False):
                 initial_status = "❌ Ko Sub YT"
@@ -545,10 +528,7 @@ class App(ctk.CTk):
                 'checkbox': cb,
                 'status_label': lbl_status,
                 'var': var,
-                'var_sub': var_sub,
-                'cb_sub': cb_sub,
                 'lbl_lang_val': lbl_lang_val,
-                'var_whisper': var_whisper,
                 'title': title,
                 'is_local': item.get('is_local', False),
                 'platform': platform,
@@ -663,6 +643,11 @@ class App(ctk.CTk):
             self.log_message("Lỗi: Vui lòng quét link và tích chọn ít nhất 1 video để bắt đầu tải!")
             return
 
+        # Failsafe: Kiểm tra xem người dùng có chọn ít nhất 1 Tùy chọn tải nào không
+        if self.check_global_video_var.get() == 0 and self.check_global_sub_var.get() == 0 and self.check_global_whisper_var.get() == 0:
+            self.log_message("❌ LỖI: Bạn chưa chọn thành phần nào để tải! Vui lòng chọn ít nhất Video, Phụ đề gốc hoặc Whisper ở phần Tùy chọn bên dưới.")
+            return
+
         self.cancel_event.clear()
 
         # Disable buttons để khóa tương tác khi đang tải
@@ -673,13 +658,12 @@ class App(ctk.CTk):
         self.textbox_urls.configure(state="disabled")
         
         if hasattr(self, 'cb_all'): self.cb_all.configure(state="disabled")
-        if hasattr(self, 'cb_all_sub'): self.cb_all_sub.configure(state="disabled")
-        if hasattr(self, 'cb_all_whisper'): self.cb_all_whisper.configure(state="disabled")
+        if hasattr(self, 'cb_global_video'): self.cb_global_video.configure(state="disabled")
+        if hasattr(self, 'cb_global_sub'): self.cb_global_sub.configure(state="disabled")
+        if hasattr(self, 'cb_global_whisper'): self.cb_global_whisper.configure(state="disabled")
         
         for row in self.video_rows.values():
             if 'cb' in row: row['cb'].configure(state="disabled")
-            if 'cb_sub' in row: row['cb_sub'].configure(state="disabled")
-            if 'cb_whisper' in row: row['cb_whisper'].configure(state="disabled")
 
         # Tạo Session Directory
         now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -697,17 +681,17 @@ class App(ctk.CTk):
             row['status_label'].configure(text="Đang chờ...", text_color="#aaa")
 
         tasks_to_process = []
+        global_use_sub = self.check_global_sub_var.get() == 1
+        global_use_whisper = self.check_global_whisper_var.get() == 1
+
         for url, row in selected_items:
-            use_sub = row['var_sub'].get() == 1
-            use_whisper = row['var_whisper'].get() == 1
             is_local = row.get('is_local', False)
-            
             lang_code = "" # Vô hiệu hoá tính năng dịch
                 
             tasks_to_process.append({
                 'url': url,
-                'use_sub': use_sub,
-                'use_whisper': use_whisper,
+                'use_sub': global_use_sub,
+                'use_whisper': global_use_whisper,
                 'is_local': is_local,
                 'lang': lang_code,
                 'platform': row.get('platform', 'generic'),
@@ -722,9 +706,12 @@ class App(ctk.CTk):
     def run_download_task(self, tasks, session_dir):
         # Đọc cấu hình mới nhất từ Tab Cài đặt để chạy tải
         lang = self.app_settings.get("subtitle_lang", "vi")
-        download_video = "🎬" in self.menu_download_mode.get()
-        # Đồng bộ lưu lại thiết lập download_video
+        download_video = self.check_global_video_var.get() == 1
+        
+        # Đồng bộ lưu lại thiết lập cấu hình global
         self.app_settings["download_video"] = download_video
+        self.app_settings["use_global_sub"] = self.check_global_sub_var.get() == 1
+        self.app_settings["use_global_whisper"] = self.check_global_whisper_var.get() == 1
         settings.save_settings(self.app_settings)
         browser = self.app_settings.get("browser", "chrome")
         video_quality = self.app_settings.get("video_quality", "1080p")
@@ -799,13 +786,12 @@ class App(ctk.CTk):
             self.btn_open_folder.configure(state="normal", fg_color="#2ca02c", hover_color="#218c21")
         
         if hasattr(self, 'cb_all'): self.cb_all.configure(state="normal")
-        if hasattr(self, 'cb_all_sub'): self.cb_all_sub.configure(state="normal")
-        if hasattr(self, 'cb_all_whisper'): self.cb_all_whisper.configure(state="normal")
+        if hasattr(self, 'cb_global_video'): self.cb_global_video.configure(state="normal")
+        if hasattr(self, 'cb_global_sub'): self.cb_global_sub.configure(state="normal")
+        if hasattr(self, 'cb_global_whisper'): self.cb_global_whisper.configure(state="normal")
         
         for row in self.video_rows.values():
             if 'cb' in row: row['cb'].configure(state="normal")
-            if 'cb_sub' in row: row['cb_sub'].configure(state="normal")
-            if 'cb_whisper' in row: row['cb_whisper'].configure(state="normal")
 
     # ================= TAB 2: CÀI ĐẶT =================
     def build_settings_tab(self):
@@ -1672,7 +1658,7 @@ class App(ctk.CTk):
             "delay_max": delay_max,
             "video_quality": self.menu_quality.get(),
             "subtitle_lang": self.entry_sub_lang.get().strip(),
-            "download_video": "🎬" in self.menu_download_mode.get(),
+            "download_video": self.check_global_video_var.get() == 1,
             "browser": self.menu_browser.get(),
             "whisper_model": model_display,
             "whisper_device": device_display,
@@ -1715,7 +1701,7 @@ class App(ctk.CTk):
                 "delay_max": delay_max,
                 "video_quality": self.menu_quality.get(),
                 "subtitle_lang": self.entry_sub_lang.get().strip(),
-                "download_video": "🎬" in self.menu_download_mode.get(),
+                "download_video": self.check_global_video_var.get() == 1,
                 "browser": self.menu_browser.get(),
                 # Whisper settings
                 "whisper_model": model_display,

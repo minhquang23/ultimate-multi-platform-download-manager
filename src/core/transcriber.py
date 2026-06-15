@@ -135,8 +135,9 @@ def transcribe_with_cloud_api(video_path, settings_dict, log_callback):
     Thực hiện transcribe thông qua API đám mây (OpenAI hoặc Gemini) 
     để hỗ trợ máy cấu hình yếu.
     """
-    openai_key = settings_dict.get("openai_api_key", "").strip()
-    gemini_key = settings_dict.get("gemini_api_key", "").strip()
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip() or settings_dict.get("openai_api_key", "").strip()
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip() or settings_dict.get("gemini_api_key", "").strip()
+
     
     # 1. Trích xuất audio từ video bằng ffmpeg trước khi upload (để giảm băng thông)
     audio_path = os.path.splitext(video_path)[0] + ".mp3"

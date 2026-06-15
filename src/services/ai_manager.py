@@ -324,9 +324,20 @@ class AIManager:
             raise Exception("Chưa có API Key nào được cấu hình. Vui lòng mở Dev Mode để thêm Model.")
 
         for model in models_to_try:
+            import os
+            api_key = model.get("api_key", "").strip()
+            if not api_key:
+                if model["provider"] == "google":
+                    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+                elif model["provider"] == "openai":
+                    if "groq" in model.get("endpoint", "").lower():
+                        api_key = os.environ.get("GROQ_API_KEY", "").strip()
+                    if not api_key:
+                        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+
             with self.lock:
                 target = next((m for m in self.models if m["name"] == model["name"]), None)
-                if not target or target.get("status") == "Exhausted" or not model.get("api_key", "").strip():
+                if not target or target.get("status") == "Exhausted" or not api_key:
                     continue
             
             if log_callback:
@@ -334,7 +345,7 @@ class AIManager:
                 
             try:
                 if model["provider"] == "google":
-                    client = genai.Client(api_key=model["api_key"])
+                    client = genai.Client(api_key=api_key)
                     response = client.models.generate_content(
                         model=model["model"],
                         contents=user_prompt,
@@ -345,7 +356,7 @@ class AIManager:
                     clean_text = response.text.strip()
                 elif model["provider"] == "openai":
                     endpoint = model.get("endpoint", "https://api.openai.com/v1/chat/completions")
-                    headers = {"Authorization": f"Bearer {model['api_key']}", "Content-Type": "application/json"}
+                    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                     payload = {
                         "model": model["model"], 
                         "messages": [
@@ -360,6 +371,7 @@ class AIManager:
                     clean_text = data['choices'][0]['message']['content'].strip()
                 else:
                     continue
+
                     
                 if clean_text.startswith("```json"):
                     clean_text = clean_text[7:]

@@ -11,7 +11,7 @@ webvtt-py
 openai-whisper
 
 # ---- Speaker Diarization (LLM) ----
-google-generativeai
+google-genai
 
 # ---- ffmpeg (tự động tải binary) ----
 imageio-ffmpeg

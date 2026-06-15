@@ -85,7 +85,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("HiveTech - Ultimate Multi-Platform Download Manager v3.0")
+        self.title("Ultimate Multi-Platform Download Manager v3.0")
         self.geometry("900x820")
         
         # Load cấu hình

@@ -13,7 +13,7 @@ args = [
     '--windowed',                    # Chạy ẩn cửa sổ console (GUI mode)
     f'--add-data={customtkinter_path}{os.pathsep}customtkinter',  # Gói thư viện giao diện
     '--add-data=node.exe;.',         # Gói node.exe (dùng cho yt-dlp giải mã YouTube)
-    '--name=HiveTech_Download_Manager' # Tên file exe đầu ra
+    '--name=Ultimate_Download_Manager' # Tên file exe đầu ra
 ]
 
 print("🚀 Bắt đầu đóng gói ứng dụng bằng PyInstaller...")
@@ -23,4 +23,4 @@ print(f"Arguments: {args}")
 # Khởi chạy PyInstaller
 PyInstaller.__main__.run(args)
 
-print("🎉 Đóng gói hoàn tất! File cài đặt nằm ở thư mục 'dist/HiveTech_Download_Manager.exe'")
+print("🎉 Đóng gói hoàn tất! File cài đặt nằm ở thư mục 'dist/Ultimate_Download_Manager.exe'")

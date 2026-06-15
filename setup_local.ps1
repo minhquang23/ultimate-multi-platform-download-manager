@@ -1,5 +1,5 @@
 # ============================================================
-# setup_local.ps1 - Cai dat moi truong Local HiveTech Tool v3.0
+# setup_local.ps1 - Cai dat moi truong Local Ultimate Download Manager v3.0
 # Danh cho: May ca nhan co NVIDIA GPU (GTX 950 / compute 5.2+)
 # Chay: powershell -ExecutionPolicy Bypass -File .\setup_local.ps1
 # ============================================================
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "   HiveTech Download Manager v3.0 - Local Setup Script" -ForegroundColor Cyan
+Write-Host "   Ultimate Download Manager v3.0 - Local Setup Script" -ForegroundColor Cyan
 Write-Host "   Tich hop: Whisper AI + PyTorch CUDA + ffmpeg" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""

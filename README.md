@@ -1,4 +1,4 @@
-# Ultimate Multi-Platform Download Manager (HiveTech Tool v3.0)
+# Ultimate Multi-Platform Download Manager (v3.0)
 
 Đây là công cụ tải và xử lý video đa nền tảng mạnh mẽ, được tích hợp trí tuệ nhân tạo (AI) giúp bạn không chỉ tải video chất lượng cao mà còn tự động trích xuất phụ đề và nhận diện người nói (Speaker Diarization) cực kỳ thông minh. 
 

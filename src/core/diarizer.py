@@ -171,10 +171,6 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                                 "text": item.get("text") if is_translation else seg["text"]
                             })
                     
-                if progress_callback:
-                    percent = int(((i + 1) / total_chunks) * 100)
-                    progress_callback(percent)
-                    
                 success = True
                     
             except Exception as e:
@@ -200,6 +196,11 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                     "speaker": "Chưa xác định",
                     "text": seg["text"]
                 })
+                
+        if progress_callback:
+            percent = int(((i + 1) / total_chunks) * 100)
+            progress_callback(percent)
+
                 
     os.makedirs(os.path.dirname(output_txt_path), exist_ok=True)
     with open(output_txt_path, 'w', encoding='utf-8') as f:

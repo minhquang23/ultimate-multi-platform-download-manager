@@ -1,3 +1,9 @@
+import sys
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 import PyInstaller.__main__
 import os
 import customtkinter
@@ -7,7 +13,7 @@ customtkinter_path = os.path.dirname(customtkinter.__file__)
 
 # Cấu hình các đối số cho PyInstaller
 args = [
-    'app.py',
+    'run.py',
     '--noconfirm',
     '--onefile',                     # Tạo thành 1 file .exe duy nhất
     '--windowed',                    # Chạy ẩn cửa sổ console (GUI mode)

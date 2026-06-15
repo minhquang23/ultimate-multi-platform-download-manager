@@ -3,8 +3,9 @@ import threading
 import json
 import requests
 import re
-import google.generativeai as genai
-import settings
+from google import genai
+from google.genai import types
+from src.services import settings_manager as settings
 
 class AIManager:
     _instance = None
@@ -71,6 +72,7 @@ class AIManager:
                     "link": "https://openrouter.ai/keys",
                     "status": "Thiếu API Key",
                     "exhausted_time": 0,
+                    "refresh_wait": 0
                 },
                 {
                     "name": "Together AI",
@@ -163,7 +165,6 @@ class AIManager:
         
         try:
             if "openrouter.ai" in endpoint:
-                # OpenRouter auth endpoint
                 headers = {"Authorization": f"Bearer {api_key}"}
                 resp = requests.get("https://openrouter.ai/api/v1/auth/key", headers=headers, timeout=10)
                 if resp.status_code == 200:
@@ -179,15 +180,11 @@ class AIManager:
                     if quota_parts:
                         quota = " | ".join(quota_parts)
             elif provider == "google":
-                # Google Gemini
-                genai.configure(api_key=api_key)
-                m = genai.GenerativeModel(model_id)
-                # Send minimum payload
-                m.generate_content("hi")
+                # Dùng google-genai SDK mới
+                client = genai.Client(api_key=api_key)
+                client.models.generate_content(model=model_id, contents="hi")
                 is_valid = True
-                # Gemini doesn't expose headers through SDK easily
             else:
-                # Other OpenAI compatible (Groq, Together, DeepSeek, Mistral, HuggingFace, GitHub)
                 if not endpoint:
                     endpoint = "https://api.openai.com/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -196,12 +193,10 @@ class AIManager:
                 
                 if resp.status_code == 200:
                     is_valid = True
-                    # Extract standard rate limit headers
                     rem_req = resp.headers.get("x-ratelimit-remaining-requests") or resp.headers.get("x-ratelimit-limit-requests")
                     rem_tok = resp.headers.get("x-ratelimit-remaining-tokens") or resp.headers.get("x-ratelimit-limit-tokens")
                     
                     if not rem_req and not rem_tok:
-                        # Groq uses standard ones, but check variations
                         rem_req = resp.headers.get("x-ratelimit-limit-requests", "")
                     
                     quota_parts = []
@@ -210,7 +205,6 @@ class AIManager:
                     if quota_parts:
                         quota = " | ".join(quota_parts)
                 elif resp.status_code == 429:
-                    # Rate limited but valid key
                     is_valid = True
                     quota = "Đang quá tải (429)"
                 elif resp.status_code == 402:
@@ -274,33 +268,28 @@ class AIManager:
 
     def _poll_exhausted_models(self):
         while True:
-            time.sleep(10) # check every 10 seconds
+            time.sleep(10)
             
             models_to_ping = []
             with self.lock:
                 now = time.time()
                 for model in self.models:
                     if model.get("status") == "Exhausted":
-                        # Check if refresh time has passed
                         wait_time = model.get("refresh_wait", 60)
                         exhausted_time = model.get("exhausted_time", 0)
                         if now - exhausted_time >= wait_time:
                             model["status"] = "Testing..."
                             models_to_ping.append(model)
             
-            # Ping outside lock to prevent blocking UI
             for model in models_to_ping:
                 threading.Thread(target=self._ping_model, args=(model,), daemon=True).start()
 
     def _ping_model(self, model):
-        """Đốt 1 lượng token tối thiểu để kiểm tra xem API đã hồi phục chưa."""
         success = False
         try:
             if model["provider"] == "google":
-                genai.configure(api_key=model["api_key"])
-                m = genai.GenerativeModel(model["model"])
-                # Gửi chuỗi siêu ngắn
-                m.generate_content("hi")
+                client = genai.Client(api_key=model["api_key"])
+                client.models.generate_content(model=model["model"], contents="hi")
                 success = True
             elif model["provider"] == "openai":
                 endpoint = model.get("endpoint", "https://api.openai.com/v1/chat/completions")
@@ -313,7 +302,6 @@ class AIManager:
             pass
             
         with self.lock:
-            # Tìm lại model trong danh sách thực tế để cập nhật (tránh race condition)
             target = next((m for m in self.models if m["name"] == model["name"] and m["api_key"] == model["api_key"]), None)
             if target:
                 if success:
@@ -322,7 +310,6 @@ class AIManager:
                     self.add_notification(f"Key '{target['name']}' đã hoạt động trở lại!")
                 else:
                     target["status"] = "Exhausted"
-                    # Tăng thời gian chờ lên gấp đôi (Max 1 hour)
                     target["refresh_wait"] = min(target.get("refresh_wait", 60) * 2, 3600)
                     target["exhausted_time"] = time.time()
                 self._save_models()
@@ -331,18 +318,15 @@ class AIManager:
             self.on_notification_callback()
 
     def generate_diarization(self, system_instruction, user_prompt, log_callback=None, cancel_event=None):
-        """
-        Lặp qua danh sách model ưu tiên. Nếu lỗi 429 thì khóa model lại và chuyển tiếp.
-        """
+        """Lặp qua danh sách model ưu tiên. Nếu lỗi 429 thì khóa model lại và chuyển tiếp."""
         models_to_try = self.get_models()
         if not models_to_try:
             raise Exception("Chưa có API Key nào được cấu hình. Vui lòng mở Dev Mode để thêm Model.")
 
         for model in models_to_try:
-            # Re-check status inside lock to ensure it hasn't changed
             with self.lock:
                 target = next((m for m in self.models if m["name"] == model["name"]), None)
-                if not target or target.get("status") == "Exhausted":
+                if not target or target.get("status") == "Exhausted" or not model.get("api_key", "").strip():
                     continue
             
             if log_callback:
@@ -350,9 +334,14 @@ class AIManager:
                 
             try:
                 if model["provider"] == "google":
-                    genai.configure(api_key=model["api_key"])
-                    m = genai.GenerativeModel(model["model"])
-                    response = m.generate_content(system_instruction + "\n\n" + user_prompt)
+                    client = genai.Client(api_key=model["api_key"])
+                    response = client.models.generate_content(
+                        model=model["model"],
+                        contents=user_prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                        ),
+                    )
                     clean_text = response.text.strip()
                 elif model["provider"] == "openai":
                     endpoint = model.get("endpoint", "https://api.openai.com/v1/chat/completions")
@@ -372,7 +361,6 @@ class AIManager:
                 else:
                     continue
                     
-                # Xử lý text trả về
                 if clean_text.startswith("```json"):
                     clean_text = clean_text[7:]
                 elif clean_text.startswith("```"):

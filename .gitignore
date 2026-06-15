@@ -12,3 +12,7 @@ node.exe
 models/
 dist/
 *.spec
+
+download_history.db
+download_history.json.bak
+updates/

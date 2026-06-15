@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from src.services.ai_manager import AIManager
 
 def parse_transcript(filepath):
     """Đọc file transcript và gom lại thành list of segments."""
@@ -66,15 +67,7 @@ def chunk_segments(segments, chunk_size=50):
 
 def process_transcript(input_txt_path, output_txt_path, log_callback=None, progress_callback=None, target_lang=None, diarize=False, cancel_event=None):
     """Luồng chính: Nhận diện người nói bằng AI Fallback Matrix."""
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        if log_callback:
-            log_callback("❌ Chưa cài thư viện google-generativeai. Vui lòng chạy pip install google-generativeai.")
-        return False
-
-    import ai_manager
-    aim = ai_manager.AIManager()
+    aim = AIManager()
 
     segments = parse_transcript(input_txt_path)
     if not segments:
@@ -161,14 +154,12 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
         
         while retry_count < max_retries and not success:
             try:
-                # Gọi qua AIManager để xử lý cơ chế multi-model fallback
                 clean_text = aim.generate_diarization(system_instruction, user_prompt, log_callback, cancel_event)
                 if not clean_text:
                     raise Exception("Không thể nhận kết quả từ AI Manager.")
                     
                 chunk_result = json.loads(clean_text)
                 
-                # Gộp kết quả và map lại thời gian/văn bản
                 if isinstance(chunk_result, list):
                     for item in chunk_result:
                         idx = item.get("id")
@@ -180,7 +171,6 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                                 "text": item.get("text") if is_translation else seg["text"]
                             })
                     
-                # Cập nhật tiến độ %
                 if progress_callback:
                     percent = int(((i + 1) / total_chunks) * 100)
                     progress_callback(percent)
@@ -192,9 +182,7 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                 if log_callback:
                     log_callback(f"⚠️ Lỗi phân tích: {err_msg}")
                     
-                # Nếu lỗi không phải rate limit (vì AIManager đã xử lý chuyển model cho rate limit)
                 if "tất cả các model đều quá tải" in err_msg.lower() or "không có api key" in err_msg.lower():
-                    # Đợi 10s rồi thử lại vòng lặp ngoài cùng của file này (để AIManager có thời gian ping)
                     import time
                     if cancel_event:
                         if cancel_event.wait(10.0):
@@ -203,10 +191,9 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                         time.sleep(10.0)
                     retry_count += 1
                 else:
-                    break # Lỗi parse json, v.v. thì fallback luôn
+                    break
                     
         if not success:
-            # Fallback nếu vượt quá số lần thử hoặc lỗi không mong muốn
             for seg in chunk:
                 annotated_results.append({
                     "time": seg["time"],
@@ -214,7 +201,6 @@ def process_transcript(input_txt_path, output_txt_path, log_callback=None, progr
                     "text": seg["text"]
                 })
                 
-    # Ghi ra file
     os.makedirs(os.path.dirname(output_txt_path), exist_ok=True)
     with open(output_txt_path, 'w', encoding='utf-8') as f:
         f.write("# Transcript đã gán nhãn người nói bằng Hybrid AI (Gemini Flash)\n\n")

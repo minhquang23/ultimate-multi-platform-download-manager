@@ -31,6 +31,10 @@ DEFAULT_SETTINGS = {
     "enable_speaker_diarization": False,
     "gemini_api_key": "",
     "gemini_model": "gemini-2.5-flash",
+
+    # --- Cloud API settings (Added as per Resolved Decisions) ---
+    "use_cloud_api": False,         # Tùy chọn chạy API đám mây thay vì Whisper Local
+    "openai_api_key": "",           # OpenAI API Key dùng cho Cloud Whisper
 }
 
 def load_settings():

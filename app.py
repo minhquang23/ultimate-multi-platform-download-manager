@@ -695,7 +695,8 @@ class App(ctk.CTk):
                 'is_local': is_local,
                 'lang': lang_code,
                 'platform': row.get('platform', 'generic'),
-                'duration': row.get('duration')
+                'duration': row.get('duration'),
+                'title': row.get('title', 'video')
             })
 
         # Khởi chạy luồng tải ngầm để tránh đơ giao diện

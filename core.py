@@ -19,6 +19,61 @@ import re
 
 # Thêm thư mục hiện tại vào PATH để yt-dlp có thể tìm thấy node.exe (nếu có) để giải mã YouTube
 os.environ['PATH'] = os.path.abspath('.') + os.pathsep + os.environ['PATH']
+if getattr(sys, 'frozen', False):
+    os.environ['PATH'] = getattr(sys, '_MEIPASS', '') + os.pathsep + os.environ['PATH']
+
+def clean_video_title(title):
+    """
+    Loại bỏ các thông số kỹ thuật, hậu tố phụ (Official Video, [ID], HD, 1080p...)
+    và các thông số tương tác (views, reactions...) để chỉ giữ lại tiêu đề nội dung chính.
+    """
+    original_title = title
+    
+    # 1. Loại bỏ ID YouTube trong ngoặc vuông (thường gặp khi download hoặc crawl)
+    title = re.sub(r'\[[a-zA-Z0-9_-]{11}\]', '', title)
+    
+    # 2. Loại bỏ các cụm ngoặc vuông hoặc ngoặc đơn chứa từ khóa kỹ thuật/phụ trợ
+    keywords = [
+        r'official\s+video', r'official\s+music\s+video', r'official\s+audio', r'official\s+mv', r'mv',
+        r'lyrics', r'lyric\s+video',
+        r'full\s+hd', r'1080p', r'720p', r'4k', r'hd',
+        r'karaoke', r'beat', r'instrumental',
+        r'live\s+performance', r'live',
+        r'cover', r'teaser', r'trailer', r'audio', r'video'
+    ]
+    
+    def replace_brackets(match):
+        content = match.group(1).lower()
+        for kw in keywords:
+            if re.search(kw, content):
+                return ""
+        return match.group(0)
+        
+    title = re.sub(r'\(([^)]+)\)', replace_brackets, title)
+    title = re.sub(r'\[([^\]]+)\]', replace_brackets, title)
+    
+    # 3. Loại bỏ các thông số tương tác (views, reactions, comments, thích, bình luận, v.v.)
+    metrics_pattern = r'\d+(?:\.\d+)?[KMB]?(?:\s*lượt\s*xem|\s*views?|\s*reactions?|\s*comments?|\s*shares?|\s*thích|\s*bình\s*luận|\s*chia\s*sẻ)\b'
+    title = re.sub(metrics_pattern, '', title, flags=re.IGNORECASE)
+    
+    # 4. Hậu tố sau gạch đứng, gạch ngang
+    suffix_pattern = r'\s+[-|_+:·•]\s*(?:official\s+(?:music\s+)?video|official\s+audio|lyrics?|full\s+hd|1080p|720p|4k|mv|karaoke|beat|audio|video)\s*$'
+    title = re.sub(suffix_pattern, '', title, flags=re.IGNORECASE)
+    
+    # 5. Loại bỏ các ký tự dấu phân cách dư thừa
+    title = re.sub(r'\s*[·•\-|_]\s*', ' ', title)
+    title = re.sub(r'\s+', ' ', title)
+    
+    cleaned = title.strip()
+    if not cleaned:
+        return original_title
+    return cleaned
+
+def sanitize_filename(name):
+    """Làm sạch tên file để tránh các ký tự không hợp lệ trên hệ điều hành."""
+    cleaned = clean_video_title(name)
+    cleaned = re.sub(r'[\\/*?:"<>|]', '', cleaned)
+    return cleaned.strip()[:80]
 
 # ---------------------------------------------------------------------------
 # Tiện ích: Phát hiện nền tảng
@@ -110,7 +165,7 @@ def seconds_to_timestamp(seconds):
 # Tiện ích: Xử lý phụ đề VTT → TXT (YouTube)
 # ---------------------------------------------------------------------------
 
-def convert_vtt_to_txt(vtt_file_path, txt_dir):
+def convert_vtt_to_txt(vtt_file_path, txt_dir, custom_basename=None):
     """
     Đọc file .vtt và chuyển nội dung ra file .txt.
     - Khử trùng lặp các dòng cuộn (rolling subtitles).
@@ -120,8 +175,14 @@ def convert_vtt_to_txt(vtt_file_path, txt_dir):
     if not os.path.exists(vtt_file_path):
         return None
 
-    base_name = os.path.basename(vtt_file_path)
-    txt_name = (base_name[:-4] if base_name.endswith('.vtt') else base_name) + '.txt'
+    if custom_basename:
+        txt_name = f"{custom_basename}.txt"
+    else:
+        base_name = os.path.basename(vtt_file_path)
+        name_no_ext = base_name[:-4] if base_name.endswith('.vtt') else base_name
+        name_no_lang = re.sub(r'\.[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$', '', name_no_ext)
+        txt_name = name_no_lang + '.txt'
+        
     txt_file_path = os.path.join(txt_dir, txt_name)
 
     try:
@@ -165,7 +226,14 @@ def convert_vtt_to_txt(vtt_file_path, txt_dir):
                 f_txt.write(b['text'] + "\n\n")
 
         # Ghi file TXT_clean (văn bản sạch liền mạch, không timestamp)
-        clean_txt_name = (base_name[:-4] if base_name.endswith('.vtt') else base_name) + '_clean.txt'
+        if custom_basename:
+            clean_txt_name = f"{custom_basename}_clean.txt"
+        else:
+            base_name = os.path.basename(vtt_file_path)
+            name_no_ext = base_name[:-4] if base_name.endswith('.vtt') else base_name
+            name_no_lang = re.sub(r'\.[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$', '', name_no_ext)
+            clean_txt_name = name_no_lang + '_clean.txt'
+            
         clean_txt_file_path = os.path.join(txt_dir, clean_txt_name)
         text_list = []
         for b in clean_blocks:
@@ -176,11 +244,24 @@ def convert_vtt_to_txt(vtt_file_path, txt_dir):
             f_clean.write(clean_text_content)
 
         # Ghi đè VTT gốc (dạng sạch, dùng cho Premiere/trình phát)
-        with open(vtt_file_path, 'w', encoding='utf-8') as f_vtt:
+        target_vtt_path = vtt_file_path
+        if custom_basename:
+            lang_match = re.search(r'\.([a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?)\.vtt$', vtt_file_path)
+            lang_suffix = f".{lang_match.group(1)}" if lang_match else ""
+            target_vtt_path = os.path.join(os.path.dirname(vtt_file_path), f"{custom_basename}{lang_suffix}.vtt")
+
+        with open(target_vtt_path, 'w', encoding='utf-8') as f_vtt:
             f_vtt.write("WEBVTT\n\n")
             for b in clean_blocks:
                 f_vtt.write(f"{b['start_vtt']} --> {b['end_vtt']}\n")
                 f_vtt.write(b['text'] + "\n\n")
+
+        # Xóa file cũ nếu đổi tên thành công
+        if custom_basename and vtt_file_path != target_vtt_path:
+            try:
+                os.remove(vtt_file_path)
+            except Exception:
+                pass
 
         return txt_file_path
     except Exception as e:
@@ -413,7 +494,7 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
 
     # Chuẩn bị tên file output
     video_basename = os.path.splitext(os.path.basename(video_path))[0]
-    txt_filename = f"{video_basename}_whisper_transcript.txt"
+    txt_filename = f"{video_basename}.txt"
     txt_path = os.path.join(output_txt_dir, txt_filename)
 
     # Ghi kết quả ra file .txt theo định dạng chuẩn của Tool
@@ -441,7 +522,7 @@ def transcribe_with_whisper(video_path, output_txt_dir, model_name='medium',
                     f.write(f"{text}\n\n")
 
         # Ghi file sạch liền mạch không timestamp
-        clean_txt_filename = f"{video_basename}_whisper_transcript_clean.txt"
+        clean_txt_filename = f"{video_basename}_clean.txt"
         clean_txt_path = os.path.join(output_txt_dir, clean_txt_filename)
         text_list = [seg['text'].strip() for seg in segments if seg.get('text')]
         clean_text_content = " ".join(text_list)
@@ -588,7 +669,7 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                             if not entry:
                                 continue
                             v_id = entry.get('id', '')
-                            title = entry.get('title', 'Unknown Title')
+                            title = clean_video_title(entry.get('title', 'Unknown Title'))
                             v_url = entry.get('webpage_url') or (f"https://www.youtube.com/watch?v={v_id}" if v_id else url)
                             is_main = (main_v_id and v_id == main_v_id) or len(entries) == 1
                             
@@ -616,7 +697,8 @@ def fetch_video_list(urls, browser='chrome', log_callback=None):
                             title = "Unknown Video"
                             v_id = "unknown"
                             if info:
-                                title = info.get('title') or info.get('description') or f"{platform.capitalize()} Video"
+                                raw_title = info.get('title') or info.get('description') or f"{platform.capitalize()} Video"
+                                title = clean_video_title(raw_title)
                                 v_id = info.get('id') or "video"
                                 if len(title) > 80:
                                     title = title[:77] + "..."
@@ -789,8 +871,8 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
 
         # --- Cấu hình yt-dlp ---
         outtmpl_dict = {
-            'default': os.path.join(videos_dir, '%(id)s_%(title.40)s.%(ext)s'),
-            'subtitle': os.path.join(vtt_dir, '%(id)s_%(title.40)s.%(ext)s')
+            'default': os.path.join(videos_dir, '%(title.80)s.%(ext)s'),
+            'subtitle': os.path.join(vtt_dir, '%(title.80)s.%(ext)s')
         }
 
     # Chế độ dịch Whisper không lưu video
@@ -868,27 +950,12 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
             )
 
         # --- Xử lý sau khi tải ---
-        if use_subtitle:
-            # YouTube: Làm sạch VTT → TXT
-            if log_callback:
-                log_callback("📝 Đang chuẩn hóa phụ đề VTT → TXT...")
-            vtt_files = list(set(
-                glob.glob(os.path.join(vtt_dir, f"*.{lang}.vtt")) +
-                glob.glob(os.path.join(vtt_dir, f"*{lang}.vtt"))
-            ))
-            converted_any = any(convert_vtt_to_txt(vf, txt_dir) for vf in vtt_files)
-            if not converted_any and log_callback:
-                log_callback("⚠️ Không tìm thấy file phụ đề VTT. Video có thể không có subtitle.")
-            elif log_callback:
-                log_callback("✅ Chuẩn hóa phụ đề hoàn thành!")
-
-        if use_whisper:
-            # Tìm file video/audio mới nhất vừa tải về
+        # 1. Tìm và làm sạch tên tệp video/audio vừa tải về (nếu có tải video/audio)
+        video_path = None
+        if download_video or is_whisper_only:
             files_after_download = set(os.listdir(videos_dir))
             new_files = files_after_download - files_before_download
-            video_path = None
 
-            # Ưu tiên file từ hook, fallback sang scan thư mục
             if downloaded_video_file[0] and os.path.exists(downloaded_video_file[0]):
                 video_path = downloaded_video_file[0]
             else:
@@ -897,6 +964,41 @@ def download_subtitles_for_url(task, lang='vi', output_dir='downloads', download
                         video_path = os.path.join(videos_dir, fname)
                         break
 
+            # Đổi tên tệp tin để chỉ giữ lại tiêu đề nội dung chính sạch sẽ
+            if video_path:
+                sanitized_title = sanitize_filename(task.get('title', 'video'))
+                ext = os.path.splitext(video_path)[1]
+                new_video_path = os.path.join(videos_dir, f"{sanitized_title}{ext}")
+                if video_path != new_video_path:
+                    try:
+                        if os.path.exists(new_video_path):
+                            os.remove(new_video_path)
+                        os.rename(video_path, new_video_path)
+                        video_path = new_video_path
+                        if log_callback:
+                            log_callback(f"🧹 Đổi tên tệp video thành: {os.path.basename(video_path)}")
+                    except Exception as e:
+                        if log_callback:
+                            log_callback(f"⚠️ Không thể đổi tên tệp video: {e}")
+
+        # 2. Xử lý Subtitle
+        if use_subtitle:
+            # YouTube: Làm sạch VTT → TXT
+            if log_callback:
+                log_callback("📝 Đang chuẩn hóa phụ đề VTT → TXT...")
+            vtt_files = list(set(
+                glob.glob(os.path.join(vtt_dir, f"*.{lang}.vtt")) +
+                glob.glob(os.path.join(vtt_dir, f"*{lang}.vtt"))
+            ))
+            custom_basename = sanitize_filename(task.get('title', 'video'))
+            converted_any = any(convert_vtt_to_txt(vf, txt_dir, custom_basename) for vf in vtt_files)
+            if not converted_any and log_callback:
+                log_callback("⚠️ Không tìm thấy file phụ đề VTT. Video có thể không có subtitle.")
+            elif log_callback:
+                log_callback("✅ Chuẩn hóa phụ đề hoàn thành!")
+
+        # 3. Xử lý Whisper
+        if use_whisper:
             if video_path:
                 if log_callback:
                     msg = "🎙️ Bắt đầu phân tích Whisper cho âm thanh tạm thời..." if not download_video else "🎙️ Bắt đầu phân tích Whisper cho video tải về..."
